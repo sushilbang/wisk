@@ -1899,7 +1899,25 @@ class BaseTextElement extends HTMLElement {
                         break;
                     case 'pre':
                     case 'code':
-                        element = { elementName: 'code-element', value: node.textContent.trim() };
+                        const pre = node.tagName.toLowerCase() === 'pre' ? node : node.closest('pre');
+                        const code = pre ? pre.querySelector('code') : (node.tagName.toLowerCase() === 'code' ? node : null);
+                        const codeText = code ? code.textContent : node.textContent;
+
+                        let language = 'javascript';
+                        if (code && code.className) {
+                            const match = code.className.match(/language-(\w+)/);
+                            if (match) {
+                                language = match[1];
+                            }
+                        }
+
+                        element = {
+                            elementName: 'code-element',
+                            value: {
+                                textContent: codeText.trim(),
+                                language: language
+                            }
+                        };
                         skipChildren = true;
                         break;
                     case 'hr':
