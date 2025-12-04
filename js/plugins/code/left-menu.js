@@ -8,7 +8,6 @@ class LeftMenu extends LitElement {
             margin: 0px;
             padding: 0px;
             color: var(--fg-1);
-            transition: all 0.2s ease;
             font-size: 14px;
             user-select: none;
         }
@@ -16,7 +15,7 @@ class LeftMenu extends LitElement {
             list-style-type: none;
         }
         li {
-            padding: var(--padding-2) 0;
+            padding: 0;
             position: relative;
         }
         li a {
@@ -24,12 +23,14 @@ class LeftMenu extends LitElement {
             text-decoration: none;
             flex: 1;
             display: block;
-            padding: var(--padding-w1);
+            padding: 0;
             border-radius: var(--radius);
 
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            font-size: 14px;
+            font-weight: 500;
         }
         .vert-nav {
             display: flex;
@@ -40,18 +41,18 @@ class LeftMenu extends LitElement {
             align-items: center;
             gap: var(--gap-2);
             padding: var(--padding-w1);
-            color: var(--fg-2);
+            color: var(--fg-1);
             background-color: transparent;
             text-decoration: none;
             cursor: pointer;
             outline: none;
             border: none;
-            width: 100%;
             border-radius: var(--radius);
             font-weight: 500;
         }
         .vert-nav-button img {
-            width: 16px;
+            width: 20px;
+            height: 20px;
         }
         .vert-nav-button:hover {
             background-color: var(--bg-3);
@@ -59,11 +60,15 @@ class LeftMenu extends LitElement {
         .vert-nav-button:active {
             background-color: var(--bg-3);
         }
-        li a:hover {
-            background-color: var(--bg-2);
-            color: var(--fg-1);
+        .horizontal-nav {
+            display: flex;
+            flex-direction: row;
+            gap: var(--gap-2);
         }
-        li a:active {
+        .item:hover {
+            background-color: var(--bg-3);
+        }
+        .item:active {
             background-color: var(--bg-3);
         }
         .outer {
@@ -159,20 +164,22 @@ class LeftMenu extends LitElement {
         .item {
             display: flex;
             align-items: center;
-            padding: 0;
+            padding: var(--padding-w1);
+            gap: var(--gap-2);
+            border-radius: var(--radius);
         }
         .more-options {
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 4px;
             border-radius: 4px;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s;
         }
-        .item:hover .more-options {
+        .item:hover .more-options,
+        .workspace-item:hover .more-options {
             opacity: 1;
         }
         .more-options:hover {
@@ -216,10 +223,8 @@ class LeftMenu extends LitElement {
             font-size: 13px;
         }
         .delete-item {
-            color: #e11d48;
         }
         .delete-item img {
-            filter: invert(23%) sepia(94%) saturate(4465%) hue-rotate(336deg) brightness(90%) contrast(88%);
         }
         .dropdown-item:hover {
             background-color: var(--bg-2);
@@ -248,13 +253,10 @@ class LeftMenu extends LitElement {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 4px;
             border-radius: 4px;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s;
-            height: 24px;
-            width: 24px;
         }
         .item:hover .add-child {
             opacity: 1;
@@ -267,7 +269,23 @@ class LeftMenu extends LitElement {
             background-color: var(--bg-3);
         }
         .child-item {
-            padding-left: 16px;
+            padding-left: 26px;
+            position: relative;
+        }
+        .hierarchy-line-vertical {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: var(--bg-3);
+        }
+        .hierarchy-line-l {
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 50%;
+            border-left: 2px solid var(--bg-3);
+            border-bottom: 2px solid var(--bg-3);
         }
         @media (max-width: 900px) {
             .more-options,
@@ -308,12 +326,12 @@ class LeftMenu extends LitElement {
             background-color: var(--bg-2);
         }
         .folder-icon img {
-            width: 16px;
-            height: 16px;
+            width: 20px;
+            height: 20px;
         }
         .folder-icon .arrow {
-            width: 14px;
-            height: 14px;
+            width: 20px;
+            height: 20px;
             transition: transform 0.2s ease;
         }
         .folder-icon .emoji {
@@ -321,8 +339,8 @@ class LeftMenu extends LitElement {
             line-height: 1;
         }
         .folder-icon .page-icon {
-            width: 16px;
-            height: 16px;
+            width: 20px;
+            height: 20px;
             opacity: 0.8;
         }
 
@@ -353,8 +371,8 @@ class LeftMenu extends LitElement {
             text-overflow: ellipsis;
         }
         .workspace-arrow {
-            width: 16px;
-            height: 16px;
+            width: 20px;
+            height: 20px;
             transition: transform 0.2s ease;
         }
         .workspace-arrow.rotated {
@@ -522,27 +540,48 @@ class LeftMenu extends LitElement {
         }
         .workspace-btn {
             padding: var(--padding-w2);
-            border-radius: var(--radius);
-            border: none;
+            border-radius: calc(var(--radius-large) * 20);
+            border: 2px solid var(--bg-3);
             background-color: var(--bg-1);
             color: var(--fg-1);
             cursor: pointer;
             font-weight: 500;
             font-size: 14px;
-            transition: all 0.15s ease;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--gap-2);
         }
         .workspace-btn:hover {
             background-color: var(--bg-3);
-            border-color: var(--border-1);
+            color: var(--fg-1);
         }
         .workspace-btn.primary {
-            background-color: var(--fg-accent);
-            color: var(--bg-accent);
-            border-color: var(--fg-accent);
+            background: var(--fg-1);
+            color: var(--bg-1);
+            padding: var(--padding-w2);
+            font-weight: 600;
+            border-radius: calc(var(--radius-large) * 20);
+            border: 2px solid transparent;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--gap-2);
         }
         .workspace-btn.primary:hover {
-            background-color: var(--fg-accent);
-            opacity: 0.9;
+            background-color: transparent;
+            border: 2px solid var(--fg-1);
+            color: var(--fg-1);
+        }
+        .workspace-btn.tertiary {
+            background-color: transparent;
+            border: 2px solid transparent;
+            color: var(--fg-1);
+            font-weight: 500;
+        }
+        .workspace-btn.tertiary:hover {
+            background-color: var(--bg-3);
+            color: var(--fg-1);
         }
     `;
 
@@ -557,6 +596,14 @@ class LeftMenu extends LitElement {
         newWorkspaceName: { type: String },
         newWorkspaceEmoji: { type: String },
         workspaceValidationState: { type: String }, // 'valid', 'invalid', 'empty'
+        hoveredWorkspaceId: { type: String },
+        openWorkspaceDropdownId: { type: String },
+        isEditWorkspaceDialogOpen: { type: Boolean },
+        editWorkspaceName: { type: String },
+        editWorkspaceEmoji: { type: String },
+        editWorkspaceOriginalName: { type: String },
+        editWorkspaceOriginalId: { type: String },
+        editWorkspaceValidationState: { type: String },
     };
 
     constructor() {
@@ -572,6 +619,14 @@ class LeftMenu extends LitElement {
         this.newWorkspaceName = '';
         this.newWorkspaceEmoji = '';
         this.workspaceValidationState = 'empty';
+        this.hoveredWorkspaceId = null;
+        this.openWorkspaceDropdownId = null;
+        this.isEditWorkspaceDialogOpen = false;
+        this.editWorkspaceName = '';
+        this.editWorkspaceEmoji = '';
+        this.editWorkspaceOriginalName = '';
+        this.editWorkspaceOriginalId = '';
+        this.editWorkspaceValidationState = 'empty';
 
         // Add click event listener to close dropdown when clicking outside
         this.boundHandleClickOutside = this.handleClickOutside.bind(this);
@@ -793,7 +848,7 @@ class LeftMenu extends LitElement {
         }
 
         // Navigate to new page with parent_id parameter
-        window.location.href = `/?parent_id=${parentId}`;
+        window.location.href = `/?id=newpage&parent_id=${parentId}`;
     }
 
     openInEditor() {
@@ -822,6 +877,65 @@ class LeftMenu extends LitElement {
         this.requestUpdate();
     }
 
+    // Pre-compute hierarchy lines - works like the tree command in Linux
+    computeHierarchyLines() {
+        const lineData = new Array(this.filteredList.length);
+
+        for (let i = 0; i < this.filteredList.length; i++) {
+            const item = this.filteredList[i];
+            const lines = [];
+
+            // For each indentation level (depth) of this item
+            for (let depth = 0; depth < item.level; depth++) {
+                const isCurrentLevel = depth === item.level - 1;
+
+                // The ancestor we're checking is at level depth+1
+                const ancestorLevel = depth + 1;
+                const ancestorId = item.id
+                    .split('.')
+                    .slice(0, ancestorLevel + 1)
+                    .join('.');
+                const ancestorParentId = this.getParentId(ancestorId);
+
+                // Check if this ancestor has a sibling that comes after
+                let hasNextSibling = false;
+
+                for (let j = i + 1; j < this.filteredList.length; j++) {
+                    const nextItem = this.filteredList[j];
+
+                    // Stop if we've reached a shallower level
+                    if (nextItem.level < ancestorLevel) {
+                        break;
+                    }
+
+                    // Check if nextItem has an ancestor at the same level that's a sibling
+                    if (nextItem.level >= ancestorLevel) {
+                        const nextAncestorId = nextItem.id
+                            .split('.')
+                            .slice(0, ancestorLevel + 1)
+                            .join('.');
+                        const nextAncestorParentId = this.getParentId(nextAncestorId);
+
+                        if (nextAncestorId !== ancestorId && nextAncestorParentId === ancestorParentId) {
+                            hasNextSibling = true;
+                            break;
+                        }
+                    }
+                }
+
+                lines.push({
+                    leftPos: 10 + depth * 16,
+                    isCurrentLevel: isCurrentLevel,
+                    hasNextSibling: hasNextSibling,
+                });
+            }
+
+            lineData[i] = lines;
+        }
+
+        return lineData;
+    }
+
     // Workspace management methods
     initializeWorkspace() {
         const currentWorkspace = localStorage.getItem('currentWorkspace');
@@ -832,38 +946,53 @@ class LeftMenu extends LitElement {
     }
 
     getCurrentWorkspaceName() {
-        const currentWorkspace = localStorage.getItem('currentWorkspace');
-        return currentWorkspace || 'Default Workspace';
+        const currentWorkspaceId = localStorage.getItem('currentWorkspace');
+        const workspaces = this.getWorkspaces();
+        const workspace = workspaces.find(w => w.id === currentWorkspaceId);
+        return workspace ? workspace.name : 'Default Workspace';
     }
 
     getWorkspaces() {
-        const workspaces = localStorage.getItem('workspaces');
-        return workspaces ? JSON.parse(workspaces) : [];
+        const workspacesData = localStorage.getItem('workspaces') || '{"version":1,"workspaces":[]}';
+        const parsed = JSON.parse(workspacesData);
+        return parsed.workspaces;
     }
 
     saveWorkspaces(workspaces) {
-        localStorage.setItem('workspaces', JSON.stringify(workspaces));
+        const structure = {
+            version: 1,
+            workspaces: workspaces,
+        };
+        localStorage.setItem('workspaces', JSON.stringify(structure));
     }
 
     createDefaultWorkspace() {
         const workspaces = this.getWorkspaces();
-        const defaultWorkspace = {
-            name: '',
-            emoji: '🍎',
-        };
 
-        // Add to workspaces if not already there
-        if (!workspaces.find(w => w.name === defaultWorkspace.name)) {
+        // Only create if no workspaces exist
+        if (workspaces.length === 0) {
+            const defaultWorkspace = {
+                name: 'Default Workspace',
+                emoji: '💕',
+                id: window.generateWorkspaceId(),
+            };
+
             workspaces.push(defaultWorkspace);
             this.saveWorkspaces(workspaces);
+            localStorage.setItem('currentWorkspace', defaultWorkspace.id);
+        } else {
+            // Ensure currentWorkspace is set to first workspace if not set
+            if (!localStorage.getItem('currentWorkspace')) {
+                localStorage.setItem('currentWorkspace', workspaces[0].id);
+            }
         }
     }
 
     getCurrentWorkspaceEmoji() {
         const workspaces = this.getWorkspaces();
-        const currentWorkspace = localStorage.getItem('currentWorkspace') || '';
-        const workspace = workspaces.find(w => w.name === currentWorkspace);
-        return workspace ? workspace.emoji : '🍎';
+        const currentWorkspaceId = localStorage.getItem('currentWorkspace');
+        const workspace = workspaces.find(w => w.id === currentWorkspaceId);
+        return workspace ? workspace.emoji : '💕';
     }
 
     getRandomEmoji() {
@@ -878,11 +1007,11 @@ class LeftMenu extends LitElement {
         this.requestUpdate();
     }
 
-    switchWorkspace(workspaceName, e) {
+    switchWorkspace(workspaceId, e) {
         e.preventDefault();
         e.stopPropagation();
 
-        localStorage.setItem('currentWorkspace', workspaceName);
+        localStorage.setItem('currentWorkspace', workspaceId);
         this.showWorkspaceDropdown = false;
 
         // Refresh to home to load the new workspace
@@ -943,10 +1072,6 @@ class LeftMenu extends LitElement {
             return;
         }
 
-        // Generate the database name that would be created
-        const sanitizedName = name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        const dbName = `WiskDatabase-${sanitizedName}`;
-
         // Check if workspace name already exists
         const workspaces = this.getWorkspaces();
         const nameExists = workspaces.some(w => w.name === name);
@@ -976,9 +1101,13 @@ class LeftMenu extends LitElement {
         const name = this.newWorkspaceName.trim();
         const workspaces = this.getWorkspaces();
 
+        // Generate unique ID for the workspace
+        const id = window.generateWorkspaceId();
+
         const newWorkspace = {
             name: name,
             emoji: this.newWorkspaceEmoji,
+            id: id,
         };
 
         // Add to workspaces
@@ -986,12 +1115,155 @@ class LeftMenu extends LitElement {
         this.saveWorkspaces(workspaces);
 
         // Switch to the new workspace
-        localStorage.setItem('currentWorkspace', name);
+        localStorage.setItem('currentWorkspace', id);
 
         this.closeNewWorkspaceDialog();
 
         // Refresh to home to load the new workspace
         window.location.href = '/?id=home';
+    }
+
+    toggleWorkspaceDropdown2(workspaceId, e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openWorkspaceDropdownId = this.openWorkspaceDropdownId === workspaceId ? null : workspaceId;
+        this.requestUpdate();
+    }
+
+    showEditWorkspaceDialog(workspaceId, e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const workspaces = this.getWorkspaces();
+        const workspace = workspaces.find(w => w.id === workspaceId);
+
+        if (!workspace) return;
+
+        this.editWorkspaceOriginalName = workspace.name;
+        this.editWorkspaceName = workspace.name;
+        this.editWorkspaceEmoji = workspace.emoji;
+        this.editWorkspaceOriginalId = workspaceId;
+        this.editWorkspaceValidationState = 'valid';
+        this.isEditWorkspaceDialogOpen = true;
+        this.showWorkspaceDropdown = false;
+        this.openWorkspaceDropdownId = null;
+        this.requestUpdate();
+
+        // Focus on the input field after render
+        setTimeout(() => {
+            const input = this.shadowRoot.querySelector('.edit-workspace-name-input');
+            if (input) {
+                input.focus();
+            }
+        }, 100);
+    }
+
+    closeEditWorkspaceDialog(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        this.isEditWorkspaceDialogOpen = false;
+        this.editWorkspaceName = '';
+        this.editWorkspaceEmoji = '';
+        this.editWorkspaceOriginalName = '';
+        this.editWorkspaceOriginalId = '';
+        this.editWorkspaceValidationState = 'empty';
+        this.requestUpdate();
+    }
+
+    changeEditWorkspaceEmoji(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        this.editWorkspaceEmoji = this.getRandomEmoji();
+        this.requestUpdate();
+    }
+
+    updateEditWorkspaceName(e) {
+        this.editWorkspaceName = e.target.value;
+        this.validateEditWorkspaceName();
+    }
+
+    validateEditWorkspaceName() {
+        const name = this.editWorkspaceName.trim();
+
+        if (!name) {
+            this.editWorkspaceValidationState = 'empty';
+            return;
+        }
+
+        // Check if workspace name already exists (but allow the same name if it's the original)
+        const workspaces = this.getWorkspaces();
+        const nameExists = workspaces.some(w => w.name === name && w.id !== this.editWorkspaceOriginalId);
+
+        if (nameExists) {
+            this.editWorkspaceValidationState = 'invalid';
+        } else {
+            this.editWorkspaceValidationState = 'valid';
+        }
+    }
+
+    saveEditWorkspace(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Check validation state
+        if (this.editWorkspaceValidationState === 'empty') {
+            wisk.utils.showToast('Please enter a workspace name', 3000);
+            return;
+        }
+
+        if (this.editWorkspaceValidationState === 'invalid') {
+            wisk.utils.showToast('A workspace with this name already exists', 3000);
+            return;
+        }
+
+        const newName = this.editWorkspaceName.trim();
+        const workspaces = this.getWorkspaces();
+
+        // Find and update the workspace
+        const workspaceIndex = workspaces.findIndex(w => w.id === this.editWorkspaceOriginalId);
+        if (workspaceIndex !== -1) {
+            workspaces[workspaceIndex] = {
+                name: newName,
+                emoji: this.editWorkspaceEmoji,
+                id: this.editWorkspaceOriginalId,
+            };
+            this.saveWorkspaces(workspaces);
+        }
+
+        this.closeEditWorkspaceDialog();
+        this.requestUpdate();
+    }
+
+    deleteWorkspace(workspaceId, e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currentWorkspaceId = localStorage.getItem('currentWorkspace');
+
+        // Prevent deleting the current workspace
+        if (workspaceId === currentWorkspaceId) {
+            wisk.utils.showToast('Cannot delete the current workspace. Switch to another workspace first.', 3000);
+            return;
+        }
+
+        const workspaces = this.getWorkspaces();
+        const workspace = workspaces.find(w => w.id === workspaceId);
+        const workspaceName = workspace ? workspace.name : 'Unknown';
+
+        const result = confirm(`Are you sure you want to delete the workspace "${workspaceName}"?`);
+        if (!result) {
+            return;
+        }
+
+        const filteredWorkspaces = workspaces.filter(w => w.id !== workspaceId);
+        this.saveWorkspaces(filteredWorkspaces);
+
+        this.openWorkspaceDropdownId = null;
+        this.requestUpdate();
     }
 
     render() {
@@ -1022,13 +1294,56 @@ class LeftMenu extends LitElement {
                                       ${this.getWorkspaces().map(
                                           workspace => html`
                                               <div
-                                                  class="workspace-item ${workspace.name === (localStorage.getItem('currentWorkspace') || '')
-                                                      ? 'active'
-                                                      : ''}"
-                                                  @click=${e => this.switchWorkspace(workspace.name, e)}
+                                                  class="workspace-item ${workspace.id === localStorage.getItem('currentWorkspace') ? 'active' : ''}"
+                                                  @click=${e => this.switchWorkspace(workspace.id, e)}
+                                                  @mouseenter=${() => (this.hoveredWorkspaceId = workspace.id)}
+                                                  @mouseleave=${() => {
+                                                      this.hoveredWorkspaceId = null;
+                                                      if (this.openWorkspaceDropdownId === workspace.id) {
+                                                          this.openWorkspaceDropdownId = null;
+                                                      }
+                                                  }}
                                               >
                                                   <span class="workspace-item-emoji">${workspace.emoji}</span>
-                                                  <span class="workspace-item-name">${workspace.name || 'Default Workspace'}</span>
+                                                  <span class="workspace-item-name">${workspace.name}</span>
+                                                  <div class="more-options" @click=${e => this.toggleWorkspaceDropdown2(workspace.id, e)}>
+                                                      <img
+                                                          src="/a7/forget/morex.svg"
+                                                          alt="More options"
+                                                          draggable="false"
+                                                          style="width: 20px; height: 20px;"
+                                                      />
+                                                      ${this.openWorkspaceDropdownId === workspace.id
+                                                          ? html`
+                                                                <div class="dropdown">
+                                                                    <div
+                                                                        class="dropdown-item"
+                                                                        @click=${e => this.showEditWorkspaceDialog(workspace.id, e)}
+                                                                    >
+                                                                        <img
+                                                                            src="/a7/forget/edit.svg"
+                                                                            alt="Edit"
+                                                                            draggable="false"
+                                                                            style="width: 16px; height: 16px;"
+                                                                        />
+                                                                        Edit
+                                                                    </div>
+                                                                    <div
+                                                                        class="dropdown-item delete-item"
+                                                                        @click=${e => this.deleteWorkspace(workspace.id, e)}
+                                                                    >
+                                                                        <img
+                                                                            src="/a7/forget/trash-new.svg"
+                                                                            alt="Delete"
+                                                                            draggable="false"
+                                                                            style="width: 16px; height: 16px;"
+                                                                        />
+                                                                        Delete
+                                                                    </div>
+                                                                </div>
+                                                            `
+                                                          : ''}
+                                                  </div>
                                               </div>
                                           `
                                       )}
@@ -1045,101 +1360,123 @@ class LeftMenu extends LitElement {
                     </div>
 
                     <div class="vert-nav">
-                        <button class="vert-nav-button" @click=${() => (window.location.href = '/')}>
-                            <img src="/a7/forget/page-plus-outline.svg" class="new-img" /> New Page
+                        <button class="vert-nav-button" @click=${() => (window.location.href = '?id=newpage')}>
+                            <img src="/a7/forget/new-page-heroicon.svg" class="new-img" /> New Page
                         </button>
                         <button class="vert-nav-button" @click=${() => document.querySelector('search-element').show()}>
-                            <img src="/a7/forget/search-outline.svg" class="new-img" /> Search
+                            <img src="/a7/forget/search-heroicon.svg" class="new-img" /> Search
                         </button>
                         <button class="vert-nav-button" @click=${() => (window.location.href = '/?id=home')}>
-                            <img src="/a7/forget/home-outline.svg" class="new-img" /> Home
+                            <img src="/a7/forget/home-heroicon.svg" class="new-img" /> Home
                         </button>
-                        <button
-                            class="vert-nav-button"
-                            @click=${() => document.querySelector('template-dialog').show()}
-                            style="display: ${localStorage.getItem('devMode') === 'true' ? 'flex' : 'none'};"
-                        >
+                        <button class="vert-nav-button" @click=${() => document.querySelector('template-dialog').show()}>
                             <img src="/a7/forget/templates-outline.svg" class="new-img" /> Templates
                         </button>
                     </div>
                 </div>
 
                 <div class="pages-section">
-                    <ul style="padding: var(--padding-w1);">
-                        ${this.filteredList.map(
-                            item => html`
-                                <li
-                                    class="item ${item.level > 0 ? 'child-item' : ''}"
-                                    style="padding-left: ${item.level * 16}px;"
-                                    @mouseenter=${() => (this.hoveredItemId = item.id)}
-                                    @mouseleave=${() => {
-                                        this.hoveredItemId = null;
-                                        // Close dropdown when mouse leaves the item
-                                        if (this.openDropdownId === item.id) {
-                                            this.openDropdownId = null;
-                                        }
-                                    }}
-                                >
-                                    <div
-                                        class="folder-icon"
-                                        @click=${item.hasChildren
-                                            ? e => this.toggleFolder(item.id, e)
-                                            : e => {
-                                                  e.preventDefault();
-                                                  window.location.href = `?id=${item.id}`;
-                                              }}
+                    <ul style="">
+                        ${(() => {
+                            const hierarchyLines = this.computeHierarchyLines();
+                            return this.filteredList.map(
+                                (item, itemIndex) => html`
+                                    <li
+                                        class="item ${item.level > 0 ? 'child-item' : ''}"
+                                        style="${item.level > 0 ? `padding-left: calc(${item.level * 16}px + var(--padding-2));` : ''}"
+                                        @mouseenter=${() => (this.hoveredItemId = item.id)}
+                                        @mouseleave=${() => {
+                                            this.hoveredItemId = null;
+                                            // Close dropdown when mouse leaves the item
+                                            if (this.openDropdownId === item.id) {
+                                                this.openDropdownId = null;
+                                            }
+                                        }}
                                     >
-                                        ${item.hasChildren && this.hoveredItemId === item.id
-                                            ? html`
-                                                  <img
-                                                      class="arrow"
-                                                      src=${this.expandedFolders[item.id]
-                                                          ? '/a7/forget/down-arrow.svg'
-                                                          : '/a7/forget/right-arrow.svg'}
-                                                      alt="Toggle folder"
-                                                  />
-                                              `
-                                            : item.emoji
-                                              ? html`<span class="emoji">${item.emoji}</span>`
-                                              : html`<img
-                                                    class="page-icon"
-                                                    src="${!item.name || item.name === 'Untitled'
-                                                        ? '/a7/forget/page-2.svg'
-                                                        : '/a7/forget/page-content-outline.svg'}"
-                                                    alt="File"
-                                                />`}
-                                    </div>
+                                        ${hierarchyLines[itemIndex].map(line => {
+                                            if (line.isCurrentLevel) {
+                                                // Show L-shape for current level
+                                                return html`
+                                                    <div class="hierarchy-line-l" style="left: ${line.leftPos}px;"></div>
+                                                    ${line.hasNextSibling
+                                                        ? html`<div class="hierarchy-line-vertical" style="left: ${line.leftPos}px; top: 50%;"></div>`
+                                                        : ''}
+                                                `;
+                                            } else {
+                                                // Show vertical line for ancestor levels if needed
+                                                return line.hasNextSibling
+                                                    ? html`<div class="hierarchy-line-vertical" style="left: ${line.leftPos}px;"></div>`
+                                                    : '';
+                                            }
+                                        })}
+                                        <div
+                                            class="folder-icon"
+                                            @click=${item.hasChildren
+                                                ? e => this.toggleFolder(item.id, e)
+                                                : e => {
+                                                      e.preventDefault();
+                                                      window.location.href = `?id=${item.id}`;
+                                                  }}
+                                        >
+                                            ${item.hasChildren && this.hoveredItemId === item.id
+                                                ? html`
+                                                      <img
+                                                          class="arrow"
+                                                          draggable="false"
+                                                          src=${this.expandedFolders[item.id]
+                                                              ? '/a7/forget/down-arrow.svg'
+                                                              : '/a7/forget/right-arrow.svg'}
+                                                          alt="Toggle folder"
+                                                      />
+                                                  `
+                                                : item.emoji
+                                                  ? html`<span class="emoji">${item.emoji}</span>`
+                                                  : html`<img
+                                                        class="page-icon"
+                                                        draggable="false"
+                                                        src="${!item.name || item.name === 'Untitled'
+                                                            ? '/a7/forget/document-empty-heroicon.svg'
+                                                            : '/a7/forget/page-heroicon.svg'}"
+                                                        alt="File"
+                                                    />`}
+                                        </div>
 
-                                    <a href="?id=${item.id}" style="display: flex; align-items: center; font-size: 13px; flex: 1;"> ${item.name} </a>
-                                    <div class="add-child" @click=${e => this.createChildPage(item.id, e)}>
-                                        <img src="/a7/forget/plus.svg" alt="Add child" style="width: 16px; height: 16px;" />
-                                    </div>
-                                    <div class="more-options" @click=${e => this.toggleDropdown(item.id, e)}>
-                                        <img src="/a7/forget/morex.svg" alt="More options" style="width: 16px; height: 16px;" />
-                                        ${this.openDropdownId === item.id
-                                            ? html`
-                                                  <div class="dropdown">
-                                                      <div class="dropdown-item delete-item" @click=${e => this.removeItem(item.id, e)}>
-                                                          <img src="/a7/forget/trash.svg" alt="Delete" style="width: 16px; height: 16px;" />
-                                                          Delete
+                                        <a href="?id=${item.id}"> ${item.name} </a>
+                                        <div class="add-child" @click=${e => this.createChildPage(item.id, e)}>
+                                            <img src="/a7/forget/plus.svg" alt="Add child" draggable="false" style="width: 20px; height: 20px;" />
+                                        </div>
+                                        <div class="more-options" @click=${e => this.toggleDropdown(item.id, e)}>
+                                            <img src="/a7/forget/morex.svg" alt="More options" draggable="false" style="width: 20px; height: 20px;" />
+                                            ${this.openDropdownId === item.id
+                                                ? html`
+                                                      <div class="dropdown">
+                                                          <div class="dropdown-item delete-item" @click=${e => this.removeItem(item.id, e)}>
+                                                              <img
+                                                                  src="/a7/forget/trash-new.svg"
+                                                                  alt="Delete"
+                                                                  draggable="false"
+                                                                  style="width: 20px; height: 20px;"
+                                                              />
+                                                              Delete
+                                                          </div>
                                                       </div>
-                                                  </div>
-                                              `
-                                            : ''}
-                                    </div>
-                                </li>
-                            `
-                        )}
+                                                  `
+                                                : ''}
+                                        </div>
+                                    </li>
+                                `
+                            );
+                        })()}
                     </ul>
                 </div>
 
                 <div class="bottom-section">
-                    <div class="vert-nav">
+                    <div class="horizontal-nav">
                         <button class="vert-nav-button" @click=${() => document.querySelector('help-dialog').show()}>
-                            <img src="/a7/forget/help-3.svg" class="new-img" /> Help
+                            <img src="/a7/forget/help-heroicon.svg" class="new-img" />
                         </button>
                         <button class="vert-nav-button" @click=${() => document.querySelector('feedback-dialog').show()}>
-                            <img src="/a7/forget/feedback.svg" class="new-img" /> Feedback
+                            <img src="/a7/forget/feedback-heroicon.svg" class="new-img" />
                         </button>
                     </div>
                 </div>
@@ -1183,8 +1520,58 @@ class LeftMenu extends LitElement {
                                       </div>
 
                                       <div class="workspace-dialog-actions">
-                                          <button class="workspace-btn" @click=${this.closeNewWorkspaceDialog}>Cancel</button>
+                                          <button class="workspace-btn tertiary" @click=${this.closeNewWorkspaceDialog}>Cancel</button>
                                           <button class="workspace-btn primary" @click=${this.saveNewWorkspace}>Create Workspace</button>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      `
+                    : ''}
+
+                <!-- Edit Workspace Dialog -->
+                ${this.isEditWorkspaceDialogOpen
+                    ? html`
+                          <div
+                              class="workspace-dialog"
+                              @click=${e => {
+                                  if (e.target === e.currentTarget) {
+                                      this.closeEditWorkspaceDialog();
+                                  }
+                              }}
+                          >
+                              <div class="workspace-dialog-content">
+                                  <div class="workspace-dialog-header">
+                                      <span class="workspace-dialog-title">Edit Workspace</span>
+                                      <button class="workspace-dialog-close" @click=${this.closeEditWorkspaceDialog}>
+                                          <img src="/a7/forget/dialog-x.svg" alt="Close" style=";" />
+                                      </button>
+                                  </div>
+
+                                  <div class="workspace-form">
+                                      <div class="workspace-emoji-section">
+                                          <div class="workspace-emoji-display" @click=${this.changeEditWorkspaceEmoji}>
+                                              ${this.editWorkspaceEmoji}
+                                          </div>
+                                          <input
+                                              type="text"
+                                              class="edit-workspace-name-input workspace-name-input ${this.editWorkspaceValidationState}"
+                                              placeholder="Workspace name"
+                                              .value=${this.editWorkspaceName}
+                                              @input=${this.updateEditWorkspaceName}
+                                              @keydown=${e => {
+                                                  if (e.key === 'Enter') {
+                                                      this.saveEditWorkspace(e);
+                                                  } else if (e.key === 'Escape') {
+                                                      this.closeEditWorkspaceDialog();
+                                                  }
+                                              }}
+                                          />
+                                      </div>
+
+                                      <div class="workspace-dialog-actions">
+                                          <button class="workspace-btn tertiary" @click=${this.closeEditWorkspaceDialog}>Cancel</button>
+                                          <button class="workspace-btn primary" @click=${this.saveEditWorkspace}>Save Changes</button>
                                       </div>
                                   </div>
                               </div>

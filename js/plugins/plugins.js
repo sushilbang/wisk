@@ -32,6 +32,7 @@ wisk.plugins = {
         // 'general-chat',
         'more',
         'left-menu',
+        'plugin-manager',
     ],
     loadedPlugins: [],
     pluginData: null,
@@ -181,9 +182,15 @@ function addToNavBar(content, inx) {
         button.title = '';
     }
 
+    if (content.title == 'Plugin Manager') {
+        button.style.order = 998;
+        button.classList.add('options-button');
+    }
+
     if (content.title == 'Options') {
         button.style.order = 1000;
         button.classList.add('options-button');
+        button.classList.add('options-button-main');
     }
 
     // Handle nav-mini category differently

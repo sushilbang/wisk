@@ -548,7 +548,6 @@ class GettingStarted extends LitElement {
             wisk.utils.showLoading('Importing report...');
 
             const elements = wisk.editor.convertMarkdownToElements(this.reportContent);
-            console.log('----- Elements:', elements);
 
             for (let i = 0; i < elements.length; i++) {
                 if (elements[i].component !== 'main-element') {
@@ -770,15 +769,14 @@ class GettingStarted extends LitElement {
                 <div style="display: flex; gap: var(--gap-3); flex-wrap: wrap; align-items: center;">
                     Get started with
                     <div style="display: flex; gap: var(--gap-2); flex-wrap: wrap">
-                        <button
-                            class="button"
-                            @click=${() => document.querySelector('template-dialog').show()}
-                            style="display: ${localStorage.getItem('devMode') === 'true' ? 'flex' : 'none'};"
-                        >
+                        <button onboarding-template-button class="button" @click=${() => document.querySelector('template-dialog').show()}>
                             <img src="/a7/forget/gs-templates.svg" alt="" /> Start with Templates
                         </button>
                         <button class="button" @click=${() => this.showDialog('report')}>
                             <img src="/a7/forget/gs-draft-anything.svg" alt="" /> Draft anything
+                        </button>
+                        <button class="button" @click=${() => this.showDialog('report')}>
+                            <img src="/a7/forget/gs-ai.svg" alt="" /> Start with AI
                         </button>
                         <button class="button" @click=${() => this.showDialog('import')}>
                             <img src="/a7/forget/gs-import.svg" alt="" /> Import from file
