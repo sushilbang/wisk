@@ -1853,7 +1853,9 @@ function handlePasteEvent(event) {
             event.stopPropagation();
 
             try {
-                const wiskData = JSON.parse(match[1]);
+                // Decode base64 and parse JSON
+                const jsonString = decodeURIComponent(escape(atob(match[1])));
+                const wiskData = JSON.parse(jsonString);
                 if (wiskData.__wisk_elements__ && wiskData.elements) {
                     // Restore our internal clipboard
                     elementClipboard = wiskData.elements;
@@ -1881,6 +1883,39 @@ function deleteSelectedElements() {
     clearSelection();
 }
 
+// Sanitize HTML to remove problematic link attributes that break JSON
+function sanitizeHtmlForClipboard(html) {
+    if (!html || typeof html !== 'string' || !html.includes('<a')) {
+        return html;
+    }
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const links = tempDiv.querySelectorAll('a');
+    links.forEach(link => {
+        // Store the href before clearing
+        let href = link.getAttribute('href');
+        const linkText = link.textContent;
+
+        // Clean the href if it exists
+        if (href) {
+            href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&');
+        }
+
+        // Remove ALL attributes
+        while (link.attributes.length > 0) {
+            link.removeAttribute(link.attributes[0].name);
+        }
+
+        // Set only clean attributes
+        if (href) {
+            link.setAttribute('href', href);
+        }
+        link.setAttribute('contenteditable', 'false');
+        link.setAttribute('target', '_blank');
+    });
+    return tempDiv.innerHTML;
+}
+
 async function copySelectedElements() {
     if (selectedElements.size === 0) return;
 
@@ -1894,9 +1929,16 @@ async function copySelectedElements() {
             // Don't copy the main element
             const element = wisk.editor.getElement(elementId);
             if (element) {
+                const clonedValue = JSON.parse(JSON.stringify(element.value || {}));
+
+                // Sanitize textContent if it contains HTML with links
+                if (clonedValue.textContent) {
+                    clonedValue.textContent = sanitizeHtmlForClipboard(clonedValue.textContent);
+                }
+
                 elementClipboard.push({
                     component: element.component,
-                    value: JSON.parse(JSON.stringify(element.value || {})), // Deep clone
+                    value: clonedValue,
                 });
 
                 // Collect text content
@@ -1922,7 +1964,10 @@ async function copySelectedElements() {
 
     // Copy both plain text and our custom format to system clipboard
     const combinedText = textParts.length > 0 ? textParts.join('\n\n') : '';
-    const customFormat = `__WISK_CLIPBOARD__${JSON.stringify(wiskClipboardData)}__WISK_CLIPBOARD_END__`;
+    // Base64 encode the JSON to prevent HTML entity corruption
+    const jsonString = JSON.stringify(wiskClipboardData);
+    const base64Data = btoa(unescape(encodeURIComponent(jsonString)));
+    const customFormat = `__WISK_CLIPBOARD__${base64Data}__WISK_CLIPBOARD_END__`;
 
     try {
         // Write both formats - the custom format as HTML to preserve it

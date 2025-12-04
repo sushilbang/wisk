@@ -1569,14 +1569,33 @@ class BaseTextElement extends HTMLElement {
             const doc = parser.parseFromString(htmlData, 'text/html');
             const structuredElements = [];
 
-            // Helper to make links clickable
+            // Helper to make links clickable and sanitize HTML
             const makeLinksClickable = htmlString => {
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = htmlString;
                 const links = tempDiv.querySelectorAll('a');
                 links.forEach(link => {
-                    link.contentEditable = 'false';
-                    link.target = '_blank';
+                    // Store the href before clearing
+                    let href = link.getAttribute('href');
+
+                    // Clean the href if it exists
+                    if (href) {
+                        // Remove backslashes and HTML entities
+                        href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&');
+                    }
+
+                    // Remove ALL attributes to start fresh
+                    const attrs = Array.from(link.attributes);
+                    attrs.forEach(attr => {
+                        link.removeAttribute(attr.name);
+                    });
+
+                    // Set only the clean attributes we need
+                    if (href) {
+                        link.setAttribute('href', href);
+                    }
+                    link.setAttribute('contenteditable', 'false');
+                    link.setAttribute('target', '_blank');
                 });
                 return tempDiv.innerHTML;
             };
