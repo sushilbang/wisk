@@ -205,12 +205,12 @@ class NumberedListElement extends BaseTextElement {
             }
             #number {
                 position: absolute;
-                top: 50%;
-                transform: translateY(-50%);
+                top: 0;
                 color: var(--fg-1);
                 font-size: 14px;
                 min-width: 20px;
                 text-align: right;
+                line-height: 1.5;
             }
             #editable {
                 line-height: 1.5;

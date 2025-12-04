@@ -1569,11 +1569,135 @@ class BaseTextElement extends HTMLElement {
             const doc = parser.parseFromString(htmlData, 'text/html');
             const structuredElements = [];
 
-            const processListItems = items => {
-                return Array.from(items).map(li => ({
-                    text: li.textContent.trim(),
-                    indent: getIndentLevel(li),
-                }));
+            // Helper to make links clickable
+            const makeLinksClickable = htmlString => {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlString;
+                const links = tempDiv.querySelectorAll('a');
+                links.forEach(link => {
+                    link.contentEditable = 'false';
+                    link.target = '_blank';
+                });
+                return tempDiv.innerHTML;
+            };
+
+            const getDirectChildrenLi = (listNode) => {
+                return Array.from(listNode.children).filter(child => child.tagName === 'LI');
+            };
+
+            const extractContentFromLi = (li) => {
+                // Extract text and block-level elements from li
+                const clone = li.cloneNode(true);
+
+                // Remove nested ul/ol
+                const nestedLists = clone.querySelectorAll('ul, ol');
+                nestedLists.forEach(list => list.remove());
+
+                // Remove input elements (checkboxes)
+                const inputs = clone.querySelectorAll('input');
+                inputs.forEach(input => input.remove());
+
+                // Find block-level elements (tables, code blocks, etc.)
+                const blockElements = [];
+                const tables = clone.querySelectorAll('table');
+                const codeBlocks = clone.querySelectorAll('pre');
+
+                // Extract tables
+                tables.forEach(table => {
+                    table._extracted = true;
+                    blockElements.push({ type: 'table', node: table.cloneNode(true) });
+                    table.remove();
+                });
+
+                // Extract code blocks
+                codeBlocks.forEach(pre => {
+                    pre._extracted = true;
+                    blockElements.push({ type: 'code', node: pre.cloneNode(true) });
+                    pre.remove();
+                });
+
+                // Extract text content from all paragraphs
+                const paragraphs = clone.querySelectorAll('p');
+                let text = '';
+
+                if (paragraphs.length > 0) {
+                    // Join all paragraph content with line breaks
+                    text = Array.from(paragraphs).map(p => p.innerHTML.trim()).filter(t => t).join('<br>');
+                } else {
+                    // If no paragraphs, get all text content
+                    text = clone.innerHTML.trim();
+                }
+
+                // Remove checkbox markers from text [x] or [ ]
+                text = text.replace(/^\[[\sx]\]\s*/, '');
+
+                return { text, blockElements };
+            };
+
+            const processListRecursively = (listNode, baseIndent = 0, numberCounters = {}, isCheckboxList = false) => {
+                const results = [];
+                const directChildren = getDirectChildrenLi(listNode);
+                const isNumbered = listNode.tagName === 'OL';
+
+                // Initialize counter for this indent level if not exists
+                if (!numberCounters[baseIndent]) {
+                    numberCounters[baseIndent] = 1;
+                }
+
+                directChildren.forEach((li, index) => {
+                    li._processed = true;
+
+                    // Mark all child elements as processed to prevent duplicate text elements
+                    li.querySelectorAll('*').forEach(child => {
+                        child._processed = true;
+                    });
+
+                    // Extract text and block elements from this li
+                    const { text, blockElements } = extractContentFromLi(li);
+
+                    // Add the list item
+                    const item = {
+                        type: 'list-item',
+                        text: makeLinksClickable(text),
+                        indent: baseIndent,
+                    };
+
+                    if (isNumbered) {
+                        item.number = numberCounters[baseIndent];
+                        numberCounters[baseIndent]++;
+                    }
+
+                    if (isCheckboxList) {
+                        item.checked = li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')?.checked || false;
+                    }
+
+                    results.push(item);
+
+                    // Add extracted block elements
+                    blockElements.forEach(block => {
+                        results.push({
+                            type: 'block-element',
+                            blockType: block.type,
+                            node: block.node,
+                            indent: baseIndent,
+                        });
+                    });
+
+                    // Find nested ul/ol within this li
+                    const nestedList = Array.from(li.children).find(child =>
+                        child.tagName === 'UL' || child.tagName === 'OL'
+                    );
+
+                    if (nestedList) {
+                        nestedList._processed = true;
+                        // Reset counter for child level and recursively process
+                        numberCounters[baseIndent + 1] = 1;
+                        const nestedResults = processListRecursively(nestedList, baseIndent + 1, numberCounters, isCheckboxList);
+                        results.push(...nestedResults);
+                    }
+                });
+
+                return results;
             };
 
             const getIndentLevel = element => {
@@ -1605,51 +1729,140 @@ class BaseTextElement extends HTMLElement {
                 if (node.nodeType !== Node.ELEMENT_NODE) return;
 
                 let element = null;
+                let skipChildren = false;
 
                 switch (node.tagName.toLowerCase()) {
                     case 'h1':
-                        element = { elementName: 'heading1-element', value: node.textContent.trim() };
+                        if (node.textContent.trim()) {
+                            element = { elementName: 'heading1-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        }
+                        skipChildren = true;
                         break;
                     case 'h2':
-                        element = { elementName: 'heading2-element', value: node.textContent.trim() };
+                        if (node.textContent.trim()) {
+                            element = { elementName: 'heading2-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        }
+                        skipChildren = true;
                         break;
                     case 'h3':
-                        element = { elementName: 'heading3-element', value: node.textContent.trim() };
+                        if (node.textContent.trim()) {
+                            element = { elementName: 'heading3-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        }
+                        skipChildren = true;
                         break;
                     case 'h4':
-                        element = { elementName: 'heading4-element', value: node.textContent.trim() };
+                        if (node.textContent.trim()) {
+                            element = { elementName: 'heading4-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        }
+                        skipChildren = true;
                         break;
                     case 'h5':
-                        element = { elementName: 'heading5-element', value: node.textContent.trim() };
+                        if (node.textContent.trim()) {
+                            element = { elementName: 'heading5-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        }
+                        skipChildren = true;
                         break;
                     case 'ul':
                     case 'ol':
-                        node._processed = true; // Mark as processed
-                        const isCheckboxList = Array.from(node.querySelectorAll('li')).some(
-                            li => li.textContent.startsWith('[ ]') || li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')
-                        );
+                        if (!node._processed) {
+                            node._processed = true; // Mark as processed
+                            const directLiChildren = getDirectChildrenLi(node);
+                            const isCheckboxList = directLiChildren.some(
+                                li => li.textContent.startsWith('[ ]') || li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')
+                            );
 
-                        if (isCheckboxList && node.tagName.toLowerCase() === 'ul') {
+                            // Determine element name
+                            let elementName;
+                            if (isCheckboxList && node.tagName.toLowerCase() === 'ul') {
+                                elementName = 'checkbox-element';
+                            } else {
+                                elementName = node.tagName.toLowerCase() === 'ul' ? 'list-element' : 'numbered-list-element';
+                            }
+
+                            // Process list recursively
+                            const results = processListRecursively(node, 0, {}, isCheckboxList);
+                            const listItems = results.filter(r => r.type === 'list-item');
+                            const blockElements = results.filter(r => r.type === 'block-element');
+
+                            // Create the list element with just the list items
                             element = {
-                                elementName: 'checkbox-element',
-                                value: Array.from(node.querySelectorAll('li')).map(li => {
-                                    const isChecked = li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')?.checked;
-                                    return {
-                                        text: li.textContent.replace(/^\[[\sx]\]\s*/, '').trim(),
-                                        checked: isChecked,
-                                        indent: getIndentLevel(li),
-                                    };
+                                elementName: elementName,
+                                value: listItems.map(item => {
+                                    const itemValue = { text: item.text, indent: item.indent };
+                                    if (item.number !== undefined) {
+                                        itemValue.number = item.number;
+                                    }
+                                    if (item.checked !== undefined) {
+                                        itemValue.checked = item.checked;
+                                    }
+                                    return itemValue;
                                 }),
                             };
-                        } else {
-                            element = {
-                                elementName: node.tagName.toLowerCase() === 'ul' ? 'list-element' : 'numbered-list-element',
-                                value: processListItems(node.querySelectorAll('li')),
-                            };
+
+                            // Add block elements as separate elements
+                            blockElements.forEach(blockEl => {
+                                if (blockEl.blockType === 'table') {
+                                    const table = blockEl.node;
+                                    const headers = [];
+                                    const rows = [];
+                                    const thead = table.querySelector('thead');
+                                    if (thead) {
+                                        const headerRow = thead.querySelector('tr');
+                                        if (headerRow) {
+                                            Array.from(headerRow.querySelectorAll('th')).forEach(th => {
+                                                headers.push(th.textContent.trim());
+                                            });
+                                        }
+                                    }
+                                    const tbody = table.querySelector('tbody');
+                                    if (tbody) {
+                                        Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+                                            const rowData = [];
+                                            Array.from(tr.querySelectorAll('td')).forEach(td => {
+                                                rowData.push(td.textContent.trim());
+                                            });
+                                            rows.push(rowData);
+                                        });
+                                    }
+                                    if (headers.length > 0 || rows.length > 0) {
+                                        structuredElements.push({
+                                            elementName: 'table-element',
+                                            value: {
+                                                tableContent: {
+                                                    headers: headers.length > 0 ? headers : ['Column 1'],
+                                                    rows: rows.length > 0 ? rows : [['']],
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if (blockEl.blockType === 'code') {
+                                    const pre = blockEl.node;
+                                    const code = pre.querySelector('code');
+                                    const codeText = code ? code.textContent : pre.textContent;
+
+                                    let language = 'javascript';
+                                    if (code && code.className) {
+                                        const match = code.className.match(/language-(\w+)/);
+                                        if (match) {
+                                            language = match[1];
+                                        }
+                                    }
+
+                                    structuredElements.push({
+                                        elementName: 'code-element',
+                                        value: {
+                                            textContent: codeText.trim(),
+                                            language: language
+                                        }
+                                    });
+                                }
+                            });
+
+                            skipChildren = true;
                         }
                         break;
                     case 'li':
-                        if (!isPartOfProcessedList(node)) {
+                        if (!isPartOfProcessedList(node) && !node._processed) {
                             const isCheckbox =
                                 node.textContent.startsWith('[ ]') ||
                                 node.textContent.startsWith('[x]') ||
@@ -1660,7 +1873,7 @@ class BaseTextElement extends HTMLElement {
                                     elementName: 'checkbox-element',
                                     value: [
                                         {
-                                            text: node.textContent.replace(/^\[[\sx]\]\s*/, '').trim(),
+                                            text: makeLinksClickable(node.innerHTML.replace(/^\[[\sx]\]\s*/, '').trim()),
                                             checked: node.textContent.startsWith('[x]') || node.querySelector('input[type="checkbox"]')?.checked,
                                             indent: getIndentLevel(node),
                                         },
@@ -1671,36 +1884,77 @@ class BaseTextElement extends HTMLElement {
                                     elementName: 'list-element',
                                     value: [
                                         {
-                                            text: node.textContent.trim(),
+                                            text: makeLinksClickable(node.innerHTML.trim()),
                                             indent: getIndentLevel(node),
                                         },
                                     ],
                                 };
                             }
+                            skipChildren = true;
                         }
                         break;
                     case 'blockquote':
-                        element = { elementName: 'quote-element', value: node.textContent.trim() };
+                        element = { elementName: 'quote-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        skipChildren = true;
                         break;
                     case 'pre':
                     case 'code':
                         element = { elementName: 'code-element', value: node.textContent.trim() };
+                        skipChildren = true;
                         break;
                     case 'hr':
                         element = { elementName: 'divider-element', value: '' };
+                        skipChildren = true;
                         break;
                     case 'img':
                         if (node.src) {
                             element = {
                                 elementName: 'image-element',
-                                value: node.src.startsWith('data:') ? node.src : node.src,
+                                value: node.src,
                             };
                         }
+                        skipChildren = true;
                         break;
                     case 'p':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'text-element', value: node.textContent.trim() };
+                            element = { elementName: 'text-element', value: makeLinksClickable(node.innerHTML.trim()) };
                         }
+                        skipChildren = true;
+                        break;
+                    case 'table':
+                        const headers = [];
+                        const rows = [];
+                        const thead = node.querySelector('thead');
+                        if (thead) {
+                            const headerRow = thead.querySelector('tr');
+                            if (headerRow) {
+                                Array.from(headerRow.querySelectorAll('th')).forEach(th => {
+                                    headers.push(th.textContent.trim());
+                                });
+                            }
+                        }
+                        const tbody = node.querySelector('tbody');
+                        if (tbody) {
+                            Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
+                                const rowData = [];
+                                Array.from(tr.querySelectorAll('td')).forEach(td => {
+                                    rowData.push(td.textContent.trim());
+                                });
+                                rows.push(rowData);
+                            });
+                        }
+                        if (headers.length > 0 || rows.length > 0) {
+                            element = {
+                                elementName: 'table-element',
+                                value: {
+                                    tableContent: {
+                                        headers: headers.length > 0 ? headers : ['Column 1'],
+                                        rows: rows.length > 0 ? rows : [['']],
+                                    }
+                                }
+                            };
+                        }
+                        skipChildren = true;
                         break;
                 }
 
@@ -1708,9 +1962,11 @@ class BaseTextElement extends HTMLElement {
                     structuredElements.push(element);
                 }
 
-                node.childNodes.forEach(childNode => {
-                    processNode(childNode);
-                });
+                if (!skipChildren) {
+                    node.childNodes.forEach(childNode => {
+                        processNode(childNode);
+                    });
+                }
             };
 
             processNode(doc.body);
@@ -1719,7 +1975,7 @@ class BaseTextElement extends HTMLElement {
 
             structuredElements.forEach(element => {
                 if (Array.isArray(element.value)) {
-                    element.value.forEach(item => {
+                    element.value.forEach((item, index) => {
                         if (typeof item === 'object') {
                             const newElement = {
                                 elementName: element.elementName,
@@ -1731,6 +1987,10 @@ class BaseTextElement extends HTMLElement {
 
                             if (element.elementName === 'checkbox-element') {
                                 newElement.value.checked = !!item.checked;
+                            }
+
+                            if (element.elementName === 'numbered-list-element') {
+                                newElement.value.number = item.number !== undefined ? item.number : index + 1;
                             }
 
                             flattenedElements.push(newElement);
@@ -1751,6 +2011,18 @@ class BaseTextElement extends HTMLElement {
                             imageUrl: element.value,
                             textContent: '',
                         },
+                    });
+                } else if (element.elementName === 'table-element') {
+                    // Handle tables - pass through the structure
+                    flattenedElements.push({
+                        elementName: element.elementName,
+                        value: element.value,
+                    });
+                } else if (element.elementName === 'code-element') {
+                    // Handle code blocks - pass through the structure
+                    flattenedElements.push({
+                        elementName: element.elementName,
+                        value: element.value,
                     });
                 } else {
                     flattenedElements.push({
@@ -1774,12 +2046,17 @@ class BaseTextElement extends HTMLElement {
             }
 
             var inx = 0;
-            if (flattenedElements[0].value.textContent != '') {
+            var lastId = this.id;
+
+            // Only append to current block if it's a text-element AND current block is not empty
+            if (flattenedElements[0].elementName === 'text-element' &&
+                flattenedElements[0].value.textContent &&
+                flattenedElements[0].value.textContent.trim() !== '' &&
+                this.editable.innerText.trim() !== '') {
                 wisk.editor.updateBlock(this.id, 'value.append', flattenedElements[0].value);
                 inx = 1;
             }
 
-            var lastId = this.id;
             for (var i = inx; i < flattenedElements.length; i++) {
                 lastId = wisk.editor.createBlockNoFocus(lastId, flattenedElements[i].elementName, flattenedElements[i].value);
             }

@@ -144,8 +144,7 @@ class ListElement extends BaseTextElement {
             }
             #dot {
                 position: absolute;
-                top: 50%;
-                transform: translateY(-50%);
+                top: 0.6em;
                 width: 6px;
                 height: 6px;
                 background-color: var(--fg-1);
