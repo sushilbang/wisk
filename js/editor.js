@@ -52,10 +52,16 @@ const createHoverImageContainer = elementId => {
     });
 
     selectButton.addEventListener('touchstart', event => {
+        event.preventDefault();
         dragHoldTimer = setTimeout(() => onDragStart(event, elementId), 150);
-    });
+    }, { passive: false });
 
-    selectButton.addEventListener('touchend', () => clearTimeout(dragHoldTimer));
+    selectButton.addEventListener('touchend', () => {
+        clearTimeout(dragHoldTimer);
+        if (!dragState) {
+            whenSelectClicked(elementId);
+        }
+    });
 
     selectButton.addEventListener('touchcancel', () => clearTimeout(dragHoldTimer));
 
