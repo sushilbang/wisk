@@ -1395,7 +1395,7 @@ function handleDrag(e) {
     } else {
         hideDropIndicator();
     }
-    handleScroll(e.clientY);
+    handleScroll(event.clientY);
 }
 
 function handleScroll(y) {
