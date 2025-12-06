@@ -7,7 +7,16 @@ function hideMenu() {
 }
 
 function toggleMenu() {
-    wisk.editor.toggleLeftSidebar('left-menu', 'Menu');
+    const sidebar = document.querySelector('.left-sidebar');
+    const titleElement = document.querySelector('.left-sidebar-title');
+
+    // If sidebar is visible and currently showing "Menu", close it
+    if (!sidebar.classList.contains('left-sidebar-hidden') && titleElement.innerText === 'Menu') {
+        wisk.editor.hideLeftSidebar();
+    } else {
+        // Otherwise open the menu
+        wisk.editor.toggleLeftSidebar('left-menu', 'Menu');
+    }
 }
 
 function getURLParam(str) {
