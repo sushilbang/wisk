@@ -14,11 +14,19 @@
 
 @media (min-width: 900px) {
     .left-sidebar-hidden {
-        display: none;
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        opacity: 0;
     }
 
     .left-sidebar {
-        transition: width 0.05s;
+        transition: width 0.5s, opacity 0.3s ease, border-color 0.3s ease;
+        opacity: 1;
+    }
+
+    .sidebar-resizing .left-sidebar {
+        transition: none;
     }
 
     /* Desktop-only resize handle */
@@ -64,11 +72,12 @@
         border: none;
         filter: var(--drop-shadow);
         border-right: 1px solid var(--border-1);
-        transition: left 0.2s;
+        transition: left 0.5s ease;
     }
 
     .left-sidebar-hidden {
         left: -100%;
+        transition: left 0.5s ease;
     }
 
     .resize-handle {
@@ -76,25 +85,11 @@
     }
 }
 
-.left-sidebar-close {
-    outline: none;
-    border: none;
-    background-color: transparent;
+.left-sidebar-title {
     color: var(--fg-1);
-    cursor: pointer;
-    padding: var(--padding-w1);
-    border-radius: var(--radius);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     font-size: 1rem;
-    gap: var(--gap-2);
-    transition: background-color 0.2s;
+    margin: 0;
     user-select: none;
-}
-
-.left-sidebar-close:hover {
-    background-color: var(--bg-3);
 }
 
 .left-sidebar-body {
@@ -105,8 +100,44 @@
 
 .left-sidebar-header {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     align-items: center;
     padding: var(--padding-2);
+    padding-top: var(--padding-2);
     font-weight: 400;
+    position: relative;
+    min-height: 30px;
+}
+
+.left-sidebar-title {
+    margin-top: var(--padding-2);
+}
+
+/* Mobile-only close button */
+.left-sidebar-close-mobile {
+    display: none; /* Hidden by default (desktop) */
+    position: absolute;
+    top: var(--padding-2);
+    right: var(--padding-2);
+    outline: none;
+    border: none;
+    background-color: transparent;
+    color: var(--fg-1);
+    cursor: pointer;
+    padding: var(--padding-w1);
+    border-radius: var(--radius);
+    transition: background-color 0.2s;
+}
+
+.left-sidebar-close-mobile:hover {
+    background-color: var(--bg-3);
+}
+
+/* Show close button only on mobile */
+@media (max-width: 900px) {
+    .left-sidebar-close-mobile {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
 }
