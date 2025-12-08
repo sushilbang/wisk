@@ -1131,6 +1131,10 @@ class BaseTextElement extends HTMLElement {
             console.error('Format fallback failed:', fallbackError);
             try {
                 const selection = this.shadowRoot.getSelection();
+                if (!selection.rangeCount) {
+                    return;
+                }
+                const range = selection.getRangeAt(0);
                 if (selection.toString()) {
                     const text = selection.toString();
                     const span = document.createElement('span');
@@ -1574,6 +1578,10 @@ class BaseTextElement extends HTMLElement {
             const makeLinksClickable = htmlString => {
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = htmlString;
+
+                // Drop dangerous elements entirely
+                tempDiv.querySelectorAll('script, style, iframe, object, embed, form, input, button, meta, link, base').forEach(el => el.remove());
+
                 // Remove event handlers from all elements
                 tempDiv.querySelectorAll('*').forEach(el => {
                     Array.from(el.attributes).forEach(attr => {
@@ -1783,7 +1791,14 @@ class BaseTextElement extends HTMLElement {
                         nestedList._processed = true;
                         // Reset counter for child level and recursively process
                         numberCounters[baseIndent + 1] = 1;
-                        const nestedResults = processListRecursively(nestedList, baseIndent + 1, numberCounters, isCheckboxList);
+
+                        // Check if the nested list itself is a checkbox list
+                        const nestedDirectChildren = getDirectChildrenLi(nestedList);
+                        const isNestedCheckboxList = nestedDirectChildren.some(
+                            li => li.textContent.startsWith('[ ]') || li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')
+                        );
+
+                        const nestedResults = processListRecursively(nestedList, baseIndent + 1, numberCounters, isNestedCheckboxList);
                         results.push(...nestedResults);
                     }
                 });
@@ -1816,6 +1831,18 @@ class BaseTextElement extends HTMLElement {
 
             const processNode = node => {
                 console.log('Processing node:', node);
+
+                // Preserve meaningful text nodes
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.trim();
+                    if (text) {
+                        structuredElements.push({
+                            elementName: 'text-element',
+                            value: text,
+                        });
+                    }
+                    return;
+                }
 
                 if (node.nodeType !== Node.ELEMENT_NODE) return;
 
@@ -1875,7 +1902,7 @@ class BaseTextElement extends HTMLElement {
                             const listItems = results.filter(r => r.type === 'list-item');
                             const blockElements = results.filter(r => r.type === 'block-element');
 
-                            // Create the list element with just the list items
+                            // Create the list element with all items
                             element = {
                                 elementName: elementName,
                                 value: listItems.map(item => {
