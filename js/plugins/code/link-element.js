@@ -183,15 +183,26 @@ class LinkElement extends HTMLElement {
         if (editable) {
             editable.focus();
             if (identifier && typeof identifier.x === 'number') {
-                const range = document.createRange();
-                const sel = this.shadowRoot.getSelection();
-                const textNode = editable.firstChild;
-                if (textNode) {
-                    const pos = Math.min(identifier.x, textNode.length);
-                    range.setStart(textNode, pos);
-                    range.setEnd(textNode, pos);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
+                try {
+                    // Try shadowRoot.getSelection() first (Chrome), fall back to window.getSelection() (Firefox, Safari)
+                    const sel = this.shadowRoot.getSelection?.() || window.getSelection() || document.getSelection();
+
+                    if (!sel) {
+                        console.warn('[LinkElement] Selection API not available');
+                        return;
+                    }
+
+                    const range = document.createRange();
+                    const textNode = editable.firstChild;
+                    if (textNode) {
+                        const pos = Math.min(identifier.x, textNode.length);
+                        range.setStart(textNode, pos);
+                        range.setEnd(textNode, pos);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                } catch (error) {
+                    console.warn('[LinkElement] Failed to set cursor position:', error);
                 }
             }
         }

@@ -1069,60 +1069,66 @@ class BaseTextElement extends HTMLElement {
 
         switch (type) {
             case 'url':
-                // Insert inline link-element inside the text-element
-                const linkElement = document.createElement('link-element');
-                linkElement.setAttribute('url', url);
-                linkElement.setAttribute('display', 'inline');
-                linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
+                {
+                    // Insert inline link-element inside the text-element
+                    const linkElement = document.createElement('link-element');
+                    linkElement.setAttribute('url', url);
+                    linkElement.setAttribute('display', 'inline');
+                    linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
 
-                // Get current selection/cursor position
-                const selection = this.shadowRoot.getSelection();
-                let range;
+                    // Get current selection/cursor position
+                    const selection = this.shadowRoot.getSelection();
+                    let range;
 
-                if (selection.rangeCount > 0) {
-                    range = selection.getRangeAt(0);
-                } else {
-                    // No selection, append at end
-                    range = document.createRange();
-                    range.selectNodeContents(this.editable);
-                    range.collapse(false);
+                    if (selection.rangeCount > 0) {
+                        range = selection.getRangeAt(0);
+                    } else {
+                        // No selection, append at end
+                        range = document.createRange();
+                        range.selectNodeContents(this.editable);
+                        range.collapse(false);
+                    }
+
+                    // Insert link at cursor position
+                    range.insertNode(linkElement);
+
+                    // Add a space after the link
+                    const spaceNode = document.createTextNode(' ');
+                    range.setStartAfter(linkElement);
+                    range.insertNode(spaceNode);
+
+                    // Move cursor after the space
+                    range.setStartAfter(spaceNode);
+                    range.setEndAfter(spaceNode);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+
+                    // Focus the editable
+                    this.editable.focus();
+
+                    // Force update placeholder (link-element is a child element)
+                    this.updatePlaceholder();
+
+                    // Send updates
+                    this.sendUpdates();
+                    break;
                 }
-
-                // Insert link at cursor position
-                range.insertNode(linkElement);
-
-                // Add a space after the link
-                const spaceNode = document.createTextNode(' ');
-                range.setStartAfter(linkElement);
-                range.insertNode(spaceNode);
-
-                // Move cursor after the space
-                range.setStartAfter(spaceNode);
-                range.setEndAfter(spaceNode);
-                selection.removeAllRanges();
-                selection.addRange(range);
-
-                // Focus the editable
-                this.editable.focus();
-
-                // Force update placeholder (link-element is a child element)
-                this.updatePlaceholder();
-
-                // Send updates
-                this.sendUpdates();
-                break;
             case 'bookmark':
-                // Convert to link-preview-element
-                wisk.editor.changeBlockType(this.id, {
-                    textContent: this.stripProtocol(url)
-                }, 'link-preview-element');
-                break;
+                {
+                    // Convert to link-preview-element
+                    wisk.editor.changeBlockType(this.id, {
+                        textContent: this.stripProtocol(url)
+                    }, 'link-preview-element');
+                    break;
+                }
             case 'embed':
-                // Convert to embed-element
-                wisk.editor.changeBlockType(this.id, {
-                    textContent: this.stripProtocol(url)
-                }, 'embed-element');
-                break;
+                {
+                    // Convert to embed-element
+                    wisk.editor.changeBlockType(this.id, {
+                        textContent: this.stripProtocol(url)
+                    }, 'embed-element');
+                    break;
+                }
         }
     }
 
@@ -1785,8 +1791,6 @@ class BaseTextElement extends HTMLElement {
         }
 
         console.log('Pasting:', clipboardData, htmlData);
-        console.log('---------------------------------------------------')
-        console.log('Clipboard HTML data:', htmlData);
         // Check if this is a wisk clipboard format (multi-element paste)
         if (htmlData && htmlData.includes('__WISK_CLIPBOARD__')) {
             // Let the document-level paste handler deal with it
@@ -2153,7 +2157,7 @@ class BaseTextElement extends HTMLElement {
                         skipChildren = true;
                         break;
                     case 'pre':
-                    case 'code':
+                    case 'code':{
                         const pre = node.tagName.toLowerCase() === 'pre' ? node : node.closest('pre');
                         const code = pre ? pre.querySelector('code') : (node.tagName.toLowerCase() === 'code' ? node : null);
                         const codeText = code ? code.textContent : node.textContent;
@@ -2175,6 +2179,7 @@ class BaseTextElement extends HTMLElement {
                         };
                         skipChildren = true;
                         break;
+                    }
                     case 'hr':
                         element = { elementName: 'divider-element', value: '' };
                         skipChildren = true;
@@ -2194,7 +2199,7 @@ class BaseTextElement extends HTMLElement {
                         }
                         skipChildren = true;
                         break;
-                    case 'table':
+                    case 'table':{
                         const headers = [];
                         const rows = [];
                         const thead = node.querySelector('thead');
@@ -2229,6 +2234,7 @@ class BaseTextElement extends HTMLElement {
                         }
                         skipChildren = true;
                         break;
+                    }
                 }
 
                 if (element) {
