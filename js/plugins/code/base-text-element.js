@@ -1589,8 +1589,12 @@ class BaseTextElement extends HTMLElement {
 
                     // Clean the href if it exists
                     if (href) {
-                        // Remove backslashes and HTML entities
-                        href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&');
+                        // Normalize and remove basic escaping
+                        href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&').trim();
+                        const safeProtocols = /^(https?:|mailto:|tel:|\/|#)/i;
+                        if (!safeProtocols.test(href)) {
+                            href=null;
+                        }
                     }
 
                     // Remove ALL attributes to start fresh
@@ -1605,6 +1609,7 @@ class BaseTextElement extends HTMLElement {
                     }
                     link.setAttribute('contenteditable', 'false');
                     link.setAttribute('target', '_blank');
+                    link.setAttribute('rel', 'noopener noreferrer');
                 });
                 return tempDiv.innerHTML;
             };
