@@ -1060,7 +1060,7 @@ class BaseTextElement extends HTMLElement {
                     document.execCommand('foreColor', false, formatValue);
                     document.execCommand('styleWithCSS', false, false);
                     break;
-                case 'backColor':
+                case 'backColor': {
                     const selection = this.shadowRoot.getSelection();
                     if (selection.rangeCount > 0) {
                         const range = selection.getRangeAt(0);
@@ -1075,6 +1075,7 @@ class BaseTextElement extends HTMLElement {
                         selection.addRange(range);
                     }
                     break;
+                }
                 case 'make-longer':
                 case 'make-shorter':
                 case 'fix-spelling-grammar':
@@ -1573,6 +1574,14 @@ class BaseTextElement extends HTMLElement {
             const makeLinksClickable = htmlString => {
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = htmlString;
+                // Remove event handlers from all elements
+                tempDiv.querySelectorAll('*').forEach(el => {
+                    Array.from(el.attributes).forEach(attr => {
+                        if (attr.name.startsWith('on')) {
+                           el.removeAttribute(attr.name);
+                        }
+                    });
+                });
                 const links = tempDiv.querySelectorAll('a');
                 links.forEach(link => {
                     // Store the href before clearing
@@ -1651,6 +1660,64 @@ class BaseTextElement extends HTMLElement {
                 text = text.replace(/^\[[\sx]\]\s*/, '');
 
                 return { text, blockElements };
+            };
+
+            const parseTableNode = (tableNode) => {
+                const headers = [];
+                const rows = [];
+
+                // Try to get headers from thead
+                const thead = tableNode.querySelector('thead');
+                if (thead) {
+                    const headerRow = thead.querySelector('tr');
+                    if (headerRow) {
+                        Array.from(headerRow.querySelectorAll('th')).forEach(th => {
+                            headers.push(th.textContent.trim());
+                        });
+                    }
+                }
+
+                // Get tbody or fall back to table itself for rows
+                const tbody = tableNode.querySelector('tbody') || tableNode;
+                Array.from(tbody.querySelectorAll(':scope > tr')).forEach(tr => {
+                    // Skip header row if no thead and row contains th
+                    if (!thead && tr.querySelector('th') && headers.length === 0) {
+                        Array.from(tr.querySelectorAll('th')).forEach(th => {
+                            headers.push(th.textContent.trim());
+                        });
+                        return;
+                    }
+
+                    // Extract row data from td elements
+                    const rowData = [];
+                    Array.from(tr.querySelectorAll('td')).forEach(td => {
+                        rowData.push(td.textContent.trim());
+                    });
+                    if (rowData.length > 0) {
+                        rows.push(rowData);
+                    }
+                });
+
+                return { headers, rows };
+            };
+
+            const parseCodeNode = (node) => {
+                const pre = node.tagName.toLowerCase() === 'pre' ? node : node.closest('pre');
+                const code = pre ? pre.querySelector('code') : (node.tagName.toLowerCase() === 'code' ? node : null);
+                const codeText = code ? code.textContent : node.textContent;
+
+                let language = 'javascript';
+                if (code && code.className) {
+                    const match = code.className.match(/language-(\w+)/);
+                    if (match) {
+                        language = match[1];
+                    }
+                }
+
+                return {
+                    textContent: codeText.trim(),
+                    language: language
+                };
             };
 
             const processListRecursively = (listNode, baseIndent = 0, numberCounters = {}, isCheckboxList = false) => {
@@ -1782,7 +1849,7 @@ class BaseTextElement extends HTMLElement {
                         skipChildren = true;
                         break;
                     case 'ul':
-                    case 'ol':
+                    case 'ol': {
                         if (!node._processed) {
                             node._processed = true; // Mark as processed
                             const directLiChildren = getDirectChildrenLi(node);
@@ -1821,28 +1888,7 @@ class BaseTextElement extends HTMLElement {
                             // Add block elements as separate elements
                             blockElements.forEach(blockEl => {
                                 if (blockEl.blockType === 'table') {
-                                    const table = blockEl.node;
-                                    const headers = [];
-                                    const rows = [];
-                                    const thead = table.querySelector('thead');
-                                    if (thead) {
-                                        const headerRow = thead.querySelector('tr');
-                                        if (headerRow) {
-                                            Array.from(headerRow.querySelectorAll('th')).forEach(th => {
-                                                headers.push(th.textContent.trim());
-                                            });
-                                        }
-                                    }
-                                    const tbody = table.querySelector('tbody');
-                                    if (tbody) {
-                                        Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
-                                            const rowData = [];
-                                            Array.from(tr.querySelectorAll('td')).forEach(td => {
-                                                rowData.push(td.textContent.trim());
-                                            });
-                                            rows.push(rowData);
-                                        });
-                                    }
+                                    const { headers, rows } = parseTableNode(blockEl.node);
                                     if (headers.length > 0 || rows.length > 0) {
                                         structuredElements.push({
                                             elementName: 'table-element',
@@ -1855,24 +1901,10 @@ class BaseTextElement extends HTMLElement {
                                         });
                                     }
                                 } else if (blockEl.blockType === 'code') {
-                                    const pre = blockEl.node;
-                                    const code = pre.querySelector('code');
-                                    const codeText = code ? code.textContent : pre.textContent;
-
-                                    let language = 'javascript';
-                                    if (code && code.className) {
-                                        const match = code.className.match(/language-(\w+)/);
-                                        if (match) {
-                                            language = match[1];
-                                        }
-                                    }
-
+                                    const codeData = parseCodeNode(blockEl.node);
                                     structuredElements.push({
                                         elementName: 'code-element',
-                                        value: {
-                                            textContent: codeText.trim(),
-                                            language: language
-                                        }
+                                        value: codeData
                                     });
                                 }
                             });
@@ -1880,7 +1912,8 @@ class BaseTextElement extends HTMLElement {
                             skipChildren = true;
                         }
                         break;
-                    case 'li':
+                    }
+                    case 'li': {
                         if (!isPartOfProcessedList(node) && !node._processed) {
                             const isCheckbox =
                                 node.textContent.startsWith('[ ]') ||
@@ -1912,30 +1945,16 @@ class BaseTextElement extends HTMLElement {
                             skipChildren = true;
                         }
                         break;
+                    }
                     case 'blockquote':
                         element = { elementName: 'quote-element', value: makeLinksClickable(node.innerHTML.trim()) };
                         skipChildren = true;
                         break;
                     case 'pre':
                     case 'code':
-                        const pre = node.tagName.toLowerCase() === 'pre' ? node : node.closest('pre');
-                        const code = pre ? pre.querySelector('code') : (node.tagName.toLowerCase() === 'code' ? node : null);
-                        const codeText = code ? code.textContent : node.textContent;
-
-                        let language = 'javascript';
-                        if (code && code.className) {
-                            const match = code.className.match(/language-(\w+)/);
-                            if (match) {
-                                language = match[1];
-                            }
-                        }
-
                         element = {
                             elementName: 'code-element',
-                            value: {
-                                textContent: codeText.trim(),
-                                language: language
-                            }
+                            value: parseCodeNode(node)
                         };
                         skipChildren = true;
                         break;
@@ -1958,28 +1977,8 @@ class BaseTextElement extends HTMLElement {
                         }
                         skipChildren = true;
                         break;
-                    case 'table':
-                        const headers = [];
-                        const rows = [];
-                        const thead = node.querySelector('thead');
-                        if (thead) {
-                            const headerRow = thead.querySelector('tr');
-                            if (headerRow) {
-                                Array.from(headerRow.querySelectorAll('th')).forEach(th => {
-                                    headers.push(th.textContent.trim());
-                                });
-                            }
-                        }
-                        const tbody = node.querySelector('tbody');
-                        if (tbody) {
-                            Array.from(tbody.querySelectorAll('tr')).forEach(tr => {
-                                const rowData = [];
-                                Array.from(tr.querySelectorAll('td')).forEach(td => {
-                                    rowData.push(td.textContent.trim());
-                                });
-                                rows.push(rowData);
-                            });
-                        }
+                    case 'table': {
+                        const { headers, rows } = parseTableNode(node);
                         if (headers.length > 0 || rows.length > 0) {
                             element = {
                                 elementName: 'table-element',
@@ -1993,6 +1992,7 @@ class BaseTextElement extends HTMLElement {
                         }
                         skipChildren = true;
                         break;
+                    }
                 }
 
                 if (element) {

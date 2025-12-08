@@ -269,6 +269,7 @@ class TierList extends LitElement {
 
         document.addEventListener('touchmove', this._boundTouchMove, { passive: false });
         document.addEventListener('touchend', this._boundTouchEnd);
+        document.addEventListener('touchcancel', this._boundTouchEnd);
     }
 
     handleTouchMoveEvent(e) {
@@ -336,6 +337,7 @@ class TierList extends LitElement {
 
         document.removeEventListener('touchmove', this._boundTouchMove);
         document.removeEventListener('touchend', this._boundTouchEnd);
+        document.removeEventListener('touchcancel', this._boundTouchEnd);
     }
 
     async handleFileSelect(e) {
