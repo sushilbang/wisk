@@ -53,24 +53,88 @@ class SelectorElement extends HTMLElement {
         return queryIndex === query.length;
     }
 
-    selectButton(btn) {
+    async selectButton(btn) {
         var element = byQueryShadowroot('#' + this.elementId);
-        // var elementData = wisk.editor.getElement(this.elementId);
-        // console.log(this.elementId, element, elementData);
-        // var callingDetail = wisk.plugins.getPluginDetail(elementData.component);
 
         var dataPluginId = btn.getAttribute('data-plugin-id');
         var dataContentId = btn.getAttribute('data-content-id');
         var newDetail = wisk.plugins.pluginData.list[dataPluginId].contents[dataContentId];
 
-        wisk.editor.changeBlockType(this.elementId, element.getValue(), newDetail.component);
-        // if (callingDetail.textual && newDetail.textual) {
-        //     // TODO see why this is not working
-        //     // wisk.editor.focusBlock(this.elementId, { x: elementData.value.textContent.length });
-        // }
+        if (newDetail.title === 'Page') {
+            this.hide();
+            await this.createPageAndLink();
+            return;
+            // console.log('Creating child page...');
+            // this.hide();
+            // this.createChildPage(wisk.editor.pageId);
+        }
 
+        wisk.editor.changeBlockType(this.elementId, element.getValue(), newDetail.component);
         this.hide();
     }
+
+    async createPageAndLink() {
+        try {
+            const parentId = wisk.editor.pageId;
+            const randomId = Math.random().toString(36).substring(2, 12).toUpperCase();
+            const newPageId = parentId + '.' + randomId;
+            const newPageUrl = window.location.origin + '/?id=' + newPageId;
+
+            // Create the new page in database
+            await wisk.db.setPage(newPageId, {
+                id: newPageId,
+                lastUpdated: Date.now(),
+                data: {
+                    config: {
+                        plugins: [],
+                        theme: 'default',
+                        access: [],
+                        public: false,
+                        name: 'Untitled',
+                        databaseProps: {},
+                    },
+                    elements: [
+                        {
+                            id: 'main' + randomId.substring(0, 6),
+                            component: 'main-element',
+                            value: { textContent: '' },
+                            lastUpdated: Date.now(),
+                        },
+                    ],
+                    deletedElements: [],
+                    pluginData: {},
+                    sync: { syncLogs: [], isPushed: false, lastSync: 0 },
+                },
+            });
+
+            // Create link-element block in parent page pointing to new page
+            wisk.editor.changeBlockType(this.elementId, {
+                url: newPageUrl,
+                title: 'Untitled',
+                display: 'block'
+            }, 'link-element');
+
+            // Redirect to the new page
+            window.location.href = newPageUrl;
+
+        } catch (error) {
+            console.error('Error creating child page:', error);
+        }
+    }
+
+    // createChildPage(parentId, e) {
+    //     if (e) {
+    //         e.stopPropagation();
+    //         e.preventDefault();
+    //     }
+    //     wisk.editor.changeBlockType(this.elementId, {
+    //             url: newPageUrl,
+    //             title: 'Untitled',
+    //             display: 'block'
+    //         }, 'link-element');
+    //     // Navigate to new page with parent_id parameter
+    //     window.location.href = `/?id=newpage&parent_id=${parentId}`;
+    // }
 
     handleInput(e) {
         if (e.keyCode === 27) {

@@ -21,7 +21,7 @@ body {
 .editor-main {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-2);
+    gap: 2px;
     padding: var(--padding-w3);
     padding-top: 0;
     padding-bottom: 0px;

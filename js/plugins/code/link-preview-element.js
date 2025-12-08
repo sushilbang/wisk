@@ -1,8 +1,8 @@
-class LinkElement extends HTMLElement {
+class LinkPreviewElement extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
-        this.link = 'wisk.cc';
+        this.link = '';
         this.metadata = null;
         this.render();
         this.isVirtualKeyboard = this.checkIfVirtualKeyboard();
@@ -14,28 +14,51 @@ class LinkElement extends HTMLElement {
     }
 
     connectedCallback() {
-        this.editable = this.shadowRoot.querySelector('#editable');
-        this.bindEvents();
+        // this.editable = this.shadowRoot.querySelector('#editable');
+        // this.bindEvents();
+
+        // Make the entire preview clickable
+        const outer = this.shadowRoot.querySelector('.outer');
+        if (outer) {
+            outer.addEventListener('click', () => {
+                if (this.link) {
+                    let url = this.link;
+                    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                        url = 'https://' + url;
+                    }
+                    window.open(url, '_blank');
+                }
+            });
+        }
     }
 
     setValue(path, value) {
         if (path === 'value.append') {
-            this.editable.innerText += value.textContent;
+            this.link += value.textContent;
         } else {
-            this.editable.innerText = value.textContent;
+            const newLink = value.textContent || '';
+
+            // If link changed, reset metadata
+            if (newLink !== this.link) {
+                this.metadata = null;
+            }
+
+            this.link = newLink;
+
             if (value.metadata) {
                 this.metadata = value.metadata;
                 this.updatePreviewWithMetadata(this.metadata);
-            } else if (this.editable.innerText) {
+            } else if (this.link && this.link.trim()) {
                 this.updateLinkPreview();
+            } else {
+                this.resetPreview();
             }
         }
-        this.link = this.editable.innerText;
     }
 
     getValue() {
         return {
-            textContent: this.editable.innerText,
+            textContent: this.link,
             metadata: this.metadata,
         };
     }
@@ -79,7 +102,14 @@ class LinkElement extends HTMLElement {
     }
 
     async updateLinkPreview() {
-        if (!this.link || this.metadata) {
+        // Don't fetch if no link
+        if (!this.link || !this.link.trim()) {
+            this.resetPreview();
+            return;
+        }
+
+        // Don't fetch if we already have metadata for this exact link
+        if (this.metadata) {
             return;
         }
 
@@ -90,6 +120,8 @@ class LinkElement extends HTMLElement {
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 url = 'https://' + url;
             }
+
+            // console.log('[LinkPreview] Fetching metadata for:', url);
 
             const response = await fetch('https://render.wisk.cc/fetch-metadata', {
                 method: 'POST',
@@ -108,6 +140,8 @@ class LinkElement extends HTMLElement {
             if (metadata.error) {
                 throw new Error(metadata.error);
             }
+
+            // console.log('[LinkPreview] Received metadata:', metadata);
 
             this.metadata = metadata;
             this.updatePreviewWithMetadata(metadata);
@@ -264,83 +298,119 @@ class LinkElement extends HTMLElement {
                 padding: 0;
                 border: none;
                 font-family: var(--font-mono);
+                font-size: 12px;
             }
             #editable {
                 width: 100%;
             }
             .outer {
                 border: 1px solid var(--border-1);
-                border-radius: var(--radius);
+                border-radius: var(--radius-large);
                 overflow: hidden;
+                transition: all 0.15s ease;
+                background: var(--bg-1);
+                cursor: pointer;
             }
             .link-preview {
                 display: flex;
-                padding: var(--padding-w2);
-                background-color: var(--bg-1);
-                align-items: start;
                 flex-direction: column;
             }
+            .preview-header {
+                padding: 16px;
+                background: var(--bg-2);
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .preview-title-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
             .link-preview-image {
-                width: 16px;
-                height: 16px;
+                width: 20px;
+                height: 20px;
                 object-fit: contain;
-                margin-right: var(--padding-w2);
+                flex-shrink: 0;
+                border-radius: 4px;
             }
             .link-preview-content {
                 flex: 1;
                 min-width: 0;
-                margin-bottom: var(--padding-4);
             }
             .link-preview-title {
                 word-break: break-word;
-                margin-bottom: 4px;
                 color: var(--fg-1);
+                font-weight: 600;
+                font-size: 14px;
+                line-height: 1.4;
             }
             .link-preview-description {
-                font-size: 0.9em;
+                font-size: 13px;
                 color: var(--fg-2);
-                margin-bottom: 4px;
+                margin-bottom: 8px;
                 display: -webkit-box;
                 -webkit-line-clamp: 2;
                 -webkit-box-orient: vertical;
                 overflow: hidden;
+                line-height: 1.5;
             }
             .link-preview-meta {
-                font-size: 0.8em;
-                color: var(--fg-2);
+                font-size: 12px;
+                color: var(--fg-3);
+                margin-bottom: 8px;
             }
             .table-controls {
                 display: flex;
                 align-items: center;
-                gap: var(--gap-2);
+                gap: 6px;
+                padding: 0;
+                font-size: 12px;
+            }
+            .url-display {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                flex: 1;
+                min-width: 0;
+                padding: 6px 8px;
+                background: var(--bg-1);
+                border-radius: var(--radius);
             }
             .open {
-                padding: var(--padding-w2);
-                background-color: var(--bg-2);
-                color: var(--fg-1);
-                border: 1px solid var(--border-1);
+                padding: 6px 12px;
+                background-color: transparent;
+                color: var(--fg-accent);
+                border: none;
                 border-radius: var(--radius);
                 outline: none;
                 cursor: pointer;
+                font-size: 12px;
+                transition: all 0.15s ease;
+                font-weight: 500;
+            }
+            .open:hover {
+                background-color: var(--bg-3);
             }
             </style>
         `;
         const content = `
             <div class="outer">
                 <div class="link-preview">
-                    <div class="link-preview-content">
-                        <div class="link-preview-title"></div>
+                    <div class="preview-header">
+                        <div class="preview-title-row">
+                            <img class="link-preview-image" src="" alt="">
+                            <div class="link-preview-title">Link Preview</div>
+                        </div>
                         <div class="link-preview-description"></div>
                         <div class="link-preview-meta"></div>
-                    </div>
-
-                    <div class="table-controls" style="font-size: 13px; width: 100%">
-                        <img class="link-preview-image" src="" alt="Site Icon">
-                        <div style="flex: 1; display: flex;">
-                            <div class="link">https://</div>
-                            <div class="link" id="editable" contenteditable="${!wisk.editor.readonly}" spellcheck="false">${this.link}</div>
-                        </div>
-                        <button class="open">Open</button>
+                        <!-- <div class="table-controls">
+                            <div class="url-display">
+                                <span class="link" style="color: var(--fg-3);">🔗</span>
+                                <div class="link" id="editable" contenteditable="${!wisk.editor.readonly}" spellcheck="false" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.link}</div>
+                            </div>
+                            <button class="open">Open</button>
+                        </div> -->
                     </div>
                 </div>
             </div>
@@ -364,4 +434,4 @@ class LinkElement extends HTMLElement {
     }
 }
 
-customElements.define('link-preview-element', LinkElement);
+customElements.define('link-preview-element', LinkPreviewElement);

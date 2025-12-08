@@ -54,6 +54,11 @@ class BaseTextElement extends HTMLElement {
         this.showingEmojiSuggestions = false;
         this.selectedEmojiIndex = 0;
         this.currentEmojiQuery = '';
+
+        // paste link menu state
+        this.showingPasteLinkMenu = false;
+        this.pendingPasteUrl = null;
+        this.selectedPasteLinkIndex = 0;
     }
 
     getSurroundingText() {
@@ -344,6 +349,7 @@ class BaseTextElement extends HTMLElement {
     connectedCallback() {
         this.editable = this.shadowRoot.querySelector('#editable');
         this.emojiSuggestionsContainer = this.shadowRoot.querySelector('.emoji-suggestions');
+        this.pasteLinkMenu = this.shadowRoot.querySelector('.paste-link-menu');
 
         this.updatePlaceholder();
         this.bindEvents();
@@ -959,7 +965,195 @@ class BaseTextElement extends HTMLElement {
         }
     }
 
+    // ===== PASTE LINK MENU METHODS =====
+
+    isUrl(text) {
+        const trimmed = text.trim();
+        if (trimmed.includes(' ') || trimmed.includes('\n')) return false;
+        try {
+            new URL(trimmed.startsWith('http') ? trimmed : 'https://' + trimmed);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    isInternalUrl(url) {
+        // Internal links are wisk page links - either app.wisk.cc or same origin with ?id= param
+        if (!url) return false;
+        if (url.startsWith('https://app.wisk.cc')) return true;
+        try {
+            const urlObj = new URL(url);
+            const currentOrigin = window.location.origin;
+            // Only internal if same origin AND has ?id= parameter
+            if (urlObj.origin === currentOrigin && urlObj.searchParams.has('id')) return true;
+        } catch {}
+        return false;
+    }
+
+    stripProtocol(url) {
+        return url.replace(/^https?:\/\//, '');
+    }
+
+    showPasteLinkMenu(url) {
+        if (!this.pasteLinkMenu) return;
+
+        this.pendingPasteUrl = url;
+        this.showingPasteLinkMenu = true;
+        this.selectedPasteLinkIndex = 0;
+
+        // Position near cursor
+        const selection = this.shadowRoot.getSelection();
+        let left = 0, top = 24;
+
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const editableRect = this.editable.getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0) {
+                left = rect.left - editableRect.left;
+                top = rect.bottom - editableRect.top + 4;
+            }
+        }
+
+        this.pasteLinkMenu.style.left = left + 'px';
+        this.pasteLinkMenu.style.top = top + 'px';
+        this.pasteLinkMenu.style.display = 'block';
+        this.updatePasteLinkMenuSelection();
+
+        // Add click handlers
+        this.pasteLinkMenu.querySelectorAll('.paste-link-option').forEach(opt => {
+            opt.onclick = (e) => {
+                e.preventDefault();
+                this.handlePasteLinkChoice(opt.dataset.type);
+            };
+        });
+
+        // Close on outside click
+        setTimeout(() => {
+            this._closePasteMenuHandler = (e) => {
+                // Check composed path to handle shadow DOM clicks properly
+                const path = e.composedPath();
+                const clickedInMenu = path.some(el => el === this.pasteLinkMenu);
+                const clickedInHost = path.some(el => el === this);
+                if (!clickedInMenu && !clickedInHost) {
+                    this.hidePasteLinkMenu();
+                }
+            };
+            document.addEventListener('mousedown', this._closePasteMenuHandler);
+        }, 0);
+    }
+
+    hidePasteLinkMenu() {
+        if (!this.pasteLinkMenu) return;
+        this.pasteLinkMenu.style.display = 'none';
+        this.showingPasteLinkMenu = false;
+        this.pendingPasteUrl = null;
+        if (this._closePasteMenuHandler) {
+            document.removeEventListener('mousedown', this._closePasteMenuHandler);
+            this._closePasteMenuHandler = null;
+        }
+    }
+
+    updatePasteLinkMenuSelection() {
+        if (!this.pasteLinkMenu) return;
+        const options = this.pasteLinkMenu.querySelectorAll('.paste-link-option');
+        options.forEach((opt, i) => {
+            opt.classList.toggle('selected', i === this.selectedPasteLinkIndex);
+        });
+    }
+
+    handlePasteLinkChoice(type) {
+        const url = this.normalizeUrl(this.pendingPasteUrl);
+        this.hidePasteLinkMenu();
+
+        switch (type) {
+            case 'url':
+                // Insert inline link-element inside the text-element
+                const linkElement = document.createElement('link-element');
+                linkElement.setAttribute('url', url);
+                linkElement.setAttribute('display', 'inline');
+                linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
+
+                // Get current selection/cursor position
+                const selection = this.shadowRoot.getSelection();
+                let range;
+
+                if (selection.rangeCount > 0) {
+                    range = selection.getRangeAt(0);
+                } else {
+                    // No selection, append at end
+                    range = document.createRange();
+                    range.selectNodeContents(this.editable);
+                    range.collapse(false);
+                }
+
+                // Insert link at cursor position
+                range.insertNode(linkElement);
+
+                // Add a space after the link
+                const spaceNode = document.createTextNode(' ');
+                range.setStartAfter(linkElement);
+                range.insertNode(spaceNode);
+
+                // Move cursor after the space
+                range.setStartAfter(spaceNode);
+                range.setEndAfter(spaceNode);
+                selection.removeAllRanges();
+                selection.addRange(range);
+
+                // Focus the editable
+                this.editable.focus();
+
+                // Force update placeholder (link-element is a child element)
+                this.updatePlaceholder();
+
+                // Send updates
+                this.sendUpdates();
+                break;
+            case 'bookmark':
+                // Convert to link-preview-element
+                wisk.editor.changeBlockType(this.id, {
+                    textContent: this.stripProtocol(url)
+                }, 'link-preview-element');
+                break;
+            case 'embed':
+                // Convert to embed-element
+                wisk.editor.changeBlockType(this.id, {
+                    textContent: this.stripProtocol(url)
+                }, 'embed-element');
+                break;
+        }
+    }
+
+    // ===== END PASTE LINK MENU METHODS =====
+
     handleKeyDown(event) {
+        // Handle paste link menu keyboard navigation
+        if (this.showingPasteLinkMenu) {
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    this.selectedPasteLinkIndex = Math.min(2, this.selectedPasteLinkIndex + 1);
+                    this.updatePasteLinkMenuSelection();
+                    return;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    this.selectedPasteLinkIndex = Math.max(0, this.selectedPasteLinkIndex - 1);
+                    this.updatePasteLinkMenuSelection();
+                    return;
+                case 'Enter':
+                    event.preventDefault();
+                    const types = ['url', 'bookmark', 'embed'];
+                    this.handlePasteLinkChoice(types[this.selectedPasteLinkIndex]);
+                    return;
+                case 'Escape':
+                    event.preventDefault();
+                    this.hidePasteLinkMenu();
+                    return;
+            }
+        }
+
         if (this.showingEmojiSuggestions) {
             this.discardSuggestion();
             switch (event.key) {
@@ -1222,6 +1416,7 @@ class BaseTextElement extends HTMLElement {
     focus(identifier) {
         if (!identifier) {
             this.editable.focus();
+            this.updatePlaceholder();
             return;
         }
         console.log('Focus called with identifier', identifier, this.id);
@@ -1260,6 +1455,7 @@ class BaseTextElement extends HTMLElement {
                 range.setEnd(firstNode, offset);
                 selection.removeAllRanges();
                 selection.addRange(range);
+                this.updatePlaceholder();
                 return;
             } catch (e) {
                 console.warn('Failed to set cursor at beginning:', e);
@@ -1267,6 +1463,7 @@ class BaseTextElement extends HTMLElement {
         }
 
         if (!this.editable.childNodes.length) {
+            this.updatePlaceholder();
             return;
         }
 
@@ -1343,6 +1540,8 @@ class BaseTextElement extends HTMLElement {
             selection.removeAllRanges();
             selection.addRange(range);
         }
+
+        this.updatePlaceholder();
     }
 
     handleVerticalArrow(event, direction) {
@@ -1393,7 +1592,11 @@ class BaseTextElement extends HTMLElement {
 
     updatePlaceholder() {
         if (this.editable) {
-            const isEmpty = this.editable.innerText.trim() === '';
+            // Check if truly empty (no text AND no child elements like link-element)
+            const hasText = this.editable.innerText.trim() !== '';
+            const hasChildElements = this.editable.children.length > 0;
+            const isEmpty = !hasText && !hasChildElements;
+
             this.editable.classList.toggle('empty', isEmpty);
             this.editable.dataset.placeholder = this.getAttribute('placeholder') || this.placeholder;
         }
@@ -1554,9 +1757,36 @@ class BaseTextElement extends HTMLElement {
 
     handlePaste(event) {
         const clipboardData = event.clipboardData || window.clipboardData;
+        const plainText = clipboardData.getData('text/plain') || clipboardData.getData('text');
         const htmlData = clipboardData.getData('text/html');
-        console.log('Pasting:', clipboardData, htmlData);
 
+        // Check for standalone URL paste (when editable is empty)
+        if (plainText && this.isUrl(plainText.trim())) {
+            const url = plainText.trim();
+            const normalizedUrl = this.normalizeUrl(url);
+
+            // If editable is empty or only whitespace, handle as standalone URL
+            if (this.editable.innerText.trim() === '') {
+                event.preventDefault();
+
+                // Internal URLs go to block link-element
+                if (this.isInternalUrl(normalizedUrl)) {
+                    wisk.editor.changeBlockType(this.id, {
+                        url: normalizedUrl,
+                        title: 'Page', // Will be updated with actual page title
+                        display: 'block'
+                    }, 'link-element');
+                } else {
+                    // External URL - show menu for URL/Bookmark/Embed
+                    this.showPasteLinkMenu(url);
+                }
+                return;
+            }
+        }
+
+        console.log('Pasting:', clipboardData, htmlData);
+        console.log('---------------------------------------------------')
+        console.log('Clipboard HTML data:', htmlData);
         // Check if this is a wisk clipboard format (multi-element paste)
         if (htmlData && htmlData.includes('__WISK_CLIPBOARD__')) {
             // Let the document-level paste handler deal with it
@@ -1569,33 +1799,39 @@ class BaseTextElement extends HTMLElement {
             const doc = parser.parseFromString(htmlData, 'text/html');
             const structuredElements = [];
 
-            // Helper to make links clickable and sanitize HTML
-            const makeLinksClickable = htmlString => {
+            // Helper to convert anchor tags to link-elements
+            const convertLinksToElements = htmlString => {
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = htmlString;
                 const links = tempDiv.querySelectorAll('a');
                 links.forEach(link => {
-                    // Store the href before clearing
                     let href = link.getAttribute('href');
 
                     // Clean the href if it exists
                     if (href) {
-                        // Remove backslashes and HTML entities
                         href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&');
                     }
 
-                    // Remove ALL attributes to start fresh
-                    const attrs = Array.from(link.attributes);
-                    attrs.forEach(attr => {
-                        link.removeAttribute(attr.name);
-                    });
-
-                    // Set only the clean attributes we need
                     if (href) {
-                        link.setAttribute('href', href);
+                        const linkText = link.textContent || '';
+
+                        // Check if internal link
+                        const isInternal = href.startsWith('https://app.wisk.cc') ||
+                                         (href.includes(window.location.origin) && href.includes('?id='));
+
+                        // Create link-element replacement
+                        const linkElement = document.createElement('link-element');
+                        linkElement.setAttribute('url', href);
+                        linkElement.setAttribute('display', 'inline');
+                        linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
+
+                        if (isInternal) {
+                            linkElement.setAttribute('title', linkText);
+                        }
+
+                        // Replace anchor with link-element
+                        link.parentNode.replaceChild(linkElement, link);
                     }
-                    link.setAttribute('contenteditable', 'false');
-                    link.setAttribute('target', '_blank');
                 });
                 return tempDiv.innerHTML;
             };
@@ -1677,7 +1913,7 @@ class BaseTextElement extends HTMLElement {
                     // Add the list item
                     const item = {
                         type: 'list-item',
-                        text: makeLinksClickable(text),
+                        text: convertLinksToElements(text),
                         indent: baseIndent,
                     };
 
@@ -1753,31 +1989,31 @@ class BaseTextElement extends HTMLElement {
                 switch (node.tagName.toLowerCase()) {
                     case 'h1':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'heading1-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'heading1-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
                     case 'h2':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'heading2-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'heading2-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
                     case 'h3':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'heading3-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'heading3-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
                     case 'h4':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'heading4-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'heading4-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
                     case 'h5':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'heading5-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'heading5-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
@@ -1892,7 +2128,7 @@ class BaseTextElement extends HTMLElement {
                                     elementName: 'checkbox-element',
                                     value: [
                                         {
-                                            text: makeLinksClickable(node.innerHTML.replace(/^\[[\sx]\]\s*/, '').trim()),
+                                            text: convertLinksToElements(node.innerHTML.replace(/^\[[\sx]\]\s*/, '').trim()),
                                             checked: node.textContent.startsWith('[x]') || node.querySelector('input[type="checkbox"]')?.checked,
                                             indent: getIndentLevel(node),
                                         },
@@ -1903,7 +2139,7 @@ class BaseTextElement extends HTMLElement {
                                     elementName: 'list-element',
                                     value: [
                                         {
-                                            text: makeLinksClickable(node.innerHTML.trim()),
+                                            text: convertLinksToElements(node.innerHTML.trim()),
                                             indent: getIndentLevel(node),
                                         },
                                     ],
@@ -1913,7 +2149,7 @@ class BaseTextElement extends HTMLElement {
                         }
                         break;
                     case 'blockquote':
-                        element = { elementName: 'quote-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                        element = { elementName: 'quote-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         skipChildren = true;
                         break;
                     case 'pre':
@@ -1954,7 +2190,7 @@ class BaseTextElement extends HTMLElement {
                         break;
                     case 'p':
                         if (node.textContent.trim()) {
-                            element = { elementName: 'text-element', value: makeLinksClickable(node.innerHTML.trim()) };
+                            element = { elementName: 'text-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
@@ -2103,8 +2339,11 @@ class BaseTextElement extends HTMLElement {
             const text = clipboardData.getData('text') || clipboardData.getData('text/plain');
             if (text) {
                 event.preventDefault();
+                console.log('Pasting plain text:', text);
                 const cleanedText = text.replace(/[\r\n]+/g, ' ').trim();
+                console.log('Cleaned text:', cleanedText);
                 document.execCommand('insertText', false, cleanedText);
+                this.sendUpdates();
             }
         }
         return [];

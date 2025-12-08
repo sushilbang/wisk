@@ -12,7 +12,8 @@ class TextElement extends BaseTextElement {
                 outline: none;
                 position: relative;
                 line-height: 1.5;
-                min-height: 1em;
+                min-height: 1.5em;
+                padding: 2px 0;
             }
             #editable.empty:focus:before {
                 content: attr(data-placeholder);
@@ -22,8 +23,11 @@ class TextElement extends BaseTextElement {
                 opacity: 0.6;
             }
             a {
-                color: var(--fg-blue);
+                color: var(--fg-accent);
                 text-decoration: underline;
+            }
+            a:visited {
+                color: var(--fg-accent);
             }
             .reference-number {
                 color: var(--fg-blue);
@@ -107,6 +111,27 @@ class TextElement extends BaseTextElement {
                 color: var(--fg-accent);
                 font-weight: bold;
             }
+            .paste-link-menu {
+                position: absolute;
+                background: var(--bg-1);
+                border: 1px solid var(--border-1);
+                border-radius: var(--radius);
+                padding: 4px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 1000;
+                display: none;
+                min-width: 120px;
+            }
+            .paste-link-option {
+                padding: 8px 12px;
+                cursor: pointer;
+                border-radius: var(--radius);
+                font-size: 14px;
+            }
+            .paste-link-option:hover,
+            .paste-link-option.selected {
+                background: var(--bg-3);
+            }
 
             @media (hover: hover) {
                 *::-webkit-scrollbar { width: 15px; }
@@ -125,6 +150,11 @@ class TextElement extends BaseTextElement {
                 </div>
             </div>
             <div class="emoji-suggestions"></div>
+            <div class="paste-link-menu">
+                <div class="paste-link-option" data-type="url">URL</div>
+                <div class="paste-link-option" data-type="bookmark">Bookmark</div>
+                <div class="paste-link-option" data-type="embed">Embed</div>
+            </div>
         `;
         this.shadowRoot.innerHTML = style + content;
     }
