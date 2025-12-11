@@ -1819,17 +1819,14 @@ class BaseTextElement extends HTMLElement {
                     if (href) {
                         const linkText = link.textContent || '';
 
-                        // Check if internal link
-                        const isInternal = href.startsWith('https://app.wisk.cc') ||
-                                         (href.includes(window.location.origin) && href.includes('?id='));
-
                         // Create link-element replacement
                         const linkElement = document.createElement('link-element');
                         linkElement.setAttribute('url', href);
                         linkElement.setAttribute('display', 'inline');
                         linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
 
-                        if (isInternal) {
+                        // Always set title to preserve original link text (for all links)
+                        if (linkText) {
                             linkElement.setAttribute('title', linkText);
                         }
 

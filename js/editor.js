@@ -183,6 +183,90 @@ wisk.editor.addConfigChange = async function (id, value) {
     await wisk.sync.saveModification();
 };
 
+wisk.editor.addUserAccess = async function (email) {
+    const timestamp = Date.now();
+
+    // Initialize access array if it doesn't exist
+    if (!wisk.editor.document.data.config.access) {
+        wisk.editor.document.data.config.access = [];
+    }
+
+    // Don't add if already exists
+    if (wisk.editor.document.data.config.access.includes(email)) {
+        console.log('User already has access:', email);
+        return;
+    }
+
+    const currentAccess = [...wisk.editor.document.data.config.access, email];
+
+    wisk.sync.newChange({
+        path: 'data.config.access',
+        value: {
+            data: currentAccess,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    await wisk.sync.saveModification();
+};
+
+wisk.editor.removeUserAccess = async function (email) {
+    const timestamp = Date.now();
+
+    if (!wisk.editor.document.data.config.access) {
+        wisk.editor.document.data.config.access = [];
+    }
+
+    const currentAccess = wisk.editor.document.data.config.access.filter(a => a !== email);
+
+    wisk.sync.newChange({
+        path: 'data.config.access',
+        value: {
+            data: currentAccess,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    await wisk.sync.saveModification();
+};
+
+wisk.editor.setPublicStatus = async function (isPublic) {
+    const timestamp = Date.now();
+
+    wisk.sync.newChange({
+        path: 'data.config.public',
+        value: {
+            data: isPublic,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    await wisk.sync.saveModification();
+};
+
+wisk.editor.setDatabaseProp = async function (key, value) {
+    const timestamp = Date.now();
+
+    // Initialize databaseProps if it doesn't exist
+    if (!wisk.editor.document.data.config.databaseProps) {
+        wisk.editor.document.data.config.databaseProps = {};
+    }
+
+    wisk.sync.newChange({
+        path: `data.config.databaseProps.${key}`,
+        value: {
+            data: value,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    await wisk.sync.saveModification();
+};
+
 wisk.editor.savePluginData = async function (identifier, data) {
     const timestamp = Date.now();
     // create event
@@ -218,7 +302,8 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
     }
 
     const id = isRemote ? remoteId : wisk.editor.generateNewId();
-    const obj = { value, id, component: blockType };
+    const timestamp = Date.now();
+    const obj = { value, id, component: blockType, lastUpdated: timestamp };
 
     const prevElement = document.getElementById(`div-${elementId}`);
     const blockElement = createBlockElement(id, blockType);
@@ -234,15 +319,33 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
     const elementIndex = wisk.editor.document.data.elements.findIndex(e => e.id === elementId);
     wisk.editor.document.data.elements.splice(elementIndex + 1, 0, obj);
 
-    // NOTE: Do NOT create events for element creation because:
-    // 1. Elements are positional (splice inserts at specific index)
-    // 2. Events would push to end of array (wrong position!)
-    // 3. Element updates (typing, changes) are tracked via events through justUpdates()
-    // 4. Full document is saved to IndexedDB, so element creation is persisted
+    // Create events for element creation (only if not remote)
+    if (!isRemote) {
+        // Event 1: Element creation
+        wisk.sync.newChange({
+            path: 'data.elements',
+            value: {
+                data: obj,
+                timestamp: timestamp,
+                agent: wisk.sync.agent
+            }
+        });
 
-    // For server sync (future): Need different approach for element creation
-    // - Option A: Send full elements array
-    // - Option B: Use index-aware event: {path: 'data.elements', index: X, value: obj}
+        // Event 2: Element order (to preserve position)
+        wisk.sync.newChange({
+            path: 'data.elementOrder',
+            value: {
+                data: wisk.editor.document.data.elements.map(e => e.id),
+                timestamp: timestamp,
+                agent: wisk.sync.agent
+            }
+        });
+
+        // Save immediately (critical event)
+        setTimeout(async () => {
+            await wisk.sync.saveModification();
+        }, 0);
+    }
 
     // TODO quick fix? idk if this is the best way to do it
     if (blockType === 'divider-element' || blockType === 'super-divider' || blockType === 'dots-divider') {
@@ -306,102 +409,205 @@ wisk.editor.createBlockNoFocus = function (elementId, blockType, value, rec, ani
     return id;
 };
 
-wisk.editor.handleChanges = async function (updateObject) {
-    if (!updateObject) return;
+wisk.editor.handleChanges = async function (eventPackage) {
+    if (!eventPackage) return;
 
-    const changes = Array.isArray(updateObject.changes) ? updateObject.changes : updateObject.changes ? [updateObject.changes] : [];
+    const events = Array.isArray(eventPackage.events) ? eventPackage.events : [];
 
-    const allElements = updateObject.allElements || [];
-    const newDeletedElements = updateObject.newDeletedElements || [];
+    // Group events by type for efficient processing
+    const elementValueUpdates = [];
+    const elementComponentUpdates = [];
+    const elementCreations = [];
+    const elementDeletions = [];
+    const elementOrderChanges = [];
+    const configChanges = [];
+    const pluginDataChanges = [];
 
-    await handleElementDeletions(newDeletedElements);
-
-    for (const change of changes) {
-        if (change.path === 'document.elements') {
-            await handleElementChange(change.values, allElements);
-        }
-        if (change.path.startsWith('document.config.access')) {
-            if (change.path.includes('public')) {
-                wisk.editor.document.data.config.public = change.values.public;
-            }
-            if (change.path.includes('add')) {
-                wisk.editor.document.data.config.access.push(change.values.email);
-            }
-            if (change.path.includes('remove')) {
-                wisk.editor.document.data.config.access = wisk.editor.document.data.config.access.filter(a => a !== change.values.email);
+    events.forEach(event => {
+        if (event.path.startsWith('data.elements.')) {
+            if (event.path.includes('.value')) {
+                elementValueUpdates.push(event);
+            } else if (event.path.includes('.component')) {
+                elementComponentUpdates.push(event);
             }
         }
-        if (change.path.startsWith('document.config.plugins')) {
-            if (change.path.includes('add')) {
-                wisk.plugins.loadPlugin(change.values.plugin);
-            }
-            if (change.path.includes('remove')) {
-                window.location.reload();
-            }
+        else if (event.path === 'data.elements') {
+            elementCreations.push(event);
         }
-        if (change.path.startsWith('document.config.theme')) {
-            wisk.theme.setTheme(change.values.theme);
+        else if (event.path === 'data.deletedElements') {
+            elementDeletions.push(event);
         }
-        if (change.path.startsWith('document.plugin')) {
-            if (change.values.data) {
-                document.getElementById(change.path.replace('document.plugin.', '')).loadData(change.values.data);
-            }
+        else if (event.path === 'data.elementOrder') {
+            elementOrderChanges.push(event);
         }
-    }
-
-    // Handle reordering only if necessary
-    if (allElements.length > 0) {
-        smartReorderElements(allElements);
-    }
-};
-
-const handleElementChange = async (updatedElement, allElements) => {
-    if (!updatedElement) return;
-
-    const existingElement = wisk.editor.document.data.elements.find(e => e.id === updatedElement.id);
-    const domElement = document.getElementById(updatedElement.id);
-
-    if (!existingElement || !domElement) {
-        const currentIndex = allElements.indexOf(updatedElement.id);
-        const prevElementId = currentIndex > 0 ? allElements[currentIndex - 1] : '';
-
-        wisk.editor.createRemoteBlock(prevElementId, updatedElement.component, updatedElement.value, updatedElement.id);
-    } else {
-        updateExistingElement(existingElement, updatedElement, domElement, 'uwu');
-    }
-};
-
-const updateExistingElement = (existingElement, updatedElement, domElement, rec) => {
-    Object.assign(existingElement, {
-        value: updatedElement.value,
-        lastEdited: updatedElement.lastEdited,
-        component: updatedElement.component,
+        else if (event.path.startsWith('data.config')) {
+            configChanges.push(event);
+        }
+        else if (event.path.startsWith('data.pluginData')) {
+            pluginDataChanges.push(event);
+        }
     });
 
-    if (domElement.tagName.toLowerCase() !== updatedElement.component) {
-        const prevElement = wisk.editor.prevElement(updatedElement.id);
-        if (prevElement) {
-            wisk.editor.changeBlockType(updatedElement.id, updatedElement.value, updatedElement.component, rec);
-        }
-    } else {
+    // Process in order of importance:
+
+    // 1. Deletions first
+    await handleElementDeletions(elementDeletions);
+
+    // 2. Element creations
+    for (const event of elementCreations) {
+        await handleElementCreation(event);
+    }
+
+    // 3. Element value updates
+    for (const event of elementValueUpdates) {
+        await handleElementUpdate(event);
+    }
+
+    // 4. Element component updates
+    for (const event of elementComponentUpdates) {
+        await handleElementUpdate(event);
+    }
+
+    // 5. Config changes
+    for (const event of configChanges) {
+        handleConfigChange(event);
+    }
+
+    // 6. Plugin data changes
+    for (const event of pluginDataChanges) {
+        handlePluginDataChange(event);
+    }
+
+    // 7. Element order (last, so all elements exist)
+    if (elementOrderChanges.length > 0) {
+        const lastOrderEvent = elementOrderChanges[elementOrderChanges.length - 1];
+        smartReorderElements(lastOrderEvent.value.data);
+        wisk.sync.applyEvent(wisk.editor.document, lastOrderEvent);
+    }
+};
+
+// Handler for element creation events
+const handleElementCreation = async (event) => {
+    const newElement = event.value.data;
+    wisk.sync.applyEvent(wisk.editor.document, event);
+    if (document.getElementById(newElement.id)) {
+        console.log('Element already exists, skipping creation:', newElement.id);
+        return;
+    }
+    const elementIndex = wisk.editor.document.data.elements.findIndex(e => e.id === newElement.id);
+    let prevElementId = '';
+
+    if (elementIndex > 0) {
+        prevElementId = wisk.editor.document.data.elements[elementIndex - 1].id;
+    } else if (wisk.editor.document.data.elements.length > 0) {
+        prevElementId = wisk.editor.document.data.elements[0].id;
+    }
+
+    if (prevElementId) {
+        wisk.editor.createRemoteBlock(
+            prevElementId,
+            newElement.component,
+            newElement.value,
+            newElement.id
+        );
+    }
+};
+
+// Handler for element update events
+const handleElementUpdate = async (event) => {
+    const pathParts = event.path.split('.');
+    const elementId = pathParts[2];
+    const property = pathParts[3]; // 'value', 'component', 'lastUpdated'
+
+    const element = wisk.editor.getElement(elementId);
+    const domElement = document.getElementById(elementId);
+
+    if (!element || !domElement) {
+        console.warn(`Element ${elementId} not found for update`);
+        return;
+    }
+    wisk.sync.applyEvent(wisk.editor.document, event);
+    if (property === 'value') {
         setTimeout(() => {
-            domElement.setValue('', updatedElement.value);
+            domElement.setValue('', event.value.data);
+        }, 0);
+    } else if (property === 'component') {
+        const newType = event.value.data;
+        const newDomElement = document.createElement(newType);
+        newDomElement.id = elementId;
+        domElement.replaceWith(newDomElement);
+        setTimeout(() => {
+            newDomElement.setValue('', element.value);
         }, 0);
     }
 };
 
-const handleElementDeletions = async newDeletedElements => {
-    if (!Array.isArray(newDeletedElements)) return;
+// Handler for element deletion events
+const handleElementDeletions = async (events) => {
+    if (!Array.isArray(events)) return;
 
-    for (const deletedId of newDeletedElements) {
+    for (const event of events) {
+        const deletedElement = event.value.data;
+        const deletedId = deletedElement.id;
+
         if (!deletedElements.includes(deletedId)) {
             deletedElements.push(deletedId);
             const element = document.getElementById(`div-${deletedId}`);
             if (element) {
                 document.getElementById('editor').removeChild(element);
-                wisk.editor.document.data.elements = wisk.editor.document.data.elements.filter(e => e.id !== deletedId);
             }
+            wisk.editor.document.data.elements =
+                wisk.editor.document.data.elements.filter(e => e.id !== deletedId);
+
+            wisk.sync.applyEvent(wisk.editor.document, event);
         }
+    }
+};
+
+// Handler for config change events
+const handleConfigChange = (event) => {
+    wisk.sync.applyEvent(wisk.editor.document, event);
+
+    if (event.path === 'data.config.theme') {
+        wisk.theme.setTheme(event.value.data);
+    }
+    else if (event.path === 'data.config.name') {
+        document.title = event.value.data;
+    }
+    else if (event.path === 'data.config.plugins') {
+        window.location.reload();
+    }
+    else if (event.path === 'data.config.public') {
+        window.dispatchEvent(new CustomEvent('document-visibility-changed', {
+            detail: { isPublic: event.value.data }
+        }));
+    }
+    else if (event.path === 'data.config.access') {
+        window.dispatchEvent(new CustomEvent('document-access-changed', {
+            detail: { accessList: event.value.data }
+        }));
+    }
+    else if (event.path.startsWith('data.config.databaseProps')) {
+        window.dispatchEvent(new CustomEvent('database-props-changed', {
+            detail: {
+                props: wisk.editor.document.data.config.databaseProps,
+                path: event.path,
+                value: event.value.data
+            }
+        }));
+    }
+};
+
+// Handler for plugin data change events
+const handlePluginDataChange = (event) => {
+    wisk.sync.applyEvent(wisk.editor.document, event);
+
+    const pathParts = event.path.split('.');
+    const pluginId = pathParts[2];
+
+    const pluginElement = document.getElementById(pluginId);
+    if (pluginElement && typeof pluginElement.loadData === 'function') {
+        pluginElement.loadData(event.value.data);
     }
 };
 
@@ -509,8 +715,21 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
         }
     }
 
-    // Trigger sync updates
-    wisk.editor.justUpdates();
+    // Create event for element order change
+    const timestamp = Date.now();
+    wisk.sync.newChange({
+        path: 'data.elementOrder',
+        value: {
+            data: wisk.editor.document.data.elements.map(e => e.id),
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    // Save immediately (critical event)
+    setTimeout(async () => {
+        await wisk.sync.saveModification();
+    }, 0);
 
     window.dispatchEvent(
         new CustomEvent('block-moved', {
@@ -742,6 +961,16 @@ wisk.editor.htmlToMarkdown = function (html) {
                 return `~~${result}~~`;
             case 'u':
                 return `__${result}__`;
+            case 'code':
+                return `\`${result}\``;
+            case 'sup':
+                // Check if it contains a reference number link
+                const supRefLink = node.querySelector('a.reference-number');
+                if (supRefLink) {
+                    const refNum = supRefLink.textContent.replace(/[\[\]]/g, '');
+                    return `[ref_${refNum}]`;
+                }
+                return result;
             case 'span':
                 const refSpan = node.querySelector('.reference-number');
                 if (refSpan) {
@@ -878,7 +1107,7 @@ wisk.editor.updateBlock = function (elementId, path, newValue, rec) {
     }
 };
 
-wisk.editor.changeBlockType = function (elementId, value, newType, rec) {
+wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
     if (elementId.includes('-')) {
         console.log('CHANGE BLOCK TYPE IN IFRAME', elementId, newType);
         eid = elementId.split('-')[0];
@@ -886,15 +1115,67 @@ wisk.editor.changeBlockType = function (elementId, value, newType, rec) {
         return;
     }
 
-    const prevElement = wisk.editor.prevElement(elementId);
-    if (!prevElement) {
-        return;
+    const element = wisk.editor.getElement(elementId);
+    if (!element) return;
+
+    const timestamp = Date.now();
+
+    // Update in-memory document
+    element.component = newType;
+    element.value = value;
+    element.lastUpdated = timestamp;
+
+    // Create events for component and value change
+    wisk.sync.newChange({
+        path: `data.elements.${elementId}.component`,
+        value: {
+            data: newType,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    wisk.sync.newChange({
+        path: `data.elements.${elementId}.value`,
+        value: {
+            data: value,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    wisk.sync.newChange({
+        path: `data.elements.${elementId}.lastUpdated`,
+        value: {
+            data: timestamp,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    // Replace DOM element (keep same ID)
+    const oldDomElement = document.getElementById(elementId);
+    if (oldDomElement) {
+        const newDomElement = document.createElement(newType);
+        newDomElement.id = elementId;
+
+        // Replace in DOM
+        oldDomElement.replaceWith(newDomElement);
+
+        // Set value
+        setTimeout(() => {
+            newDomElement.setValue('', value);
+        }, 0);
     }
 
-    wisk.editor.deleteBlock(elementId, rec);
-    wisk.editor.createNewBlock(prevElement.id, newType, value, { x: 0 }, rec);
+    window.dispatchEvent(new CustomEvent('block-changed', {
+        detail: { id: elementId }
+    }));
 
-    window.dispatchEvent(new CustomEvent('block-changed', { detail: { id: prevElement.id } }));
+    // Save immediately (critical event)
+    if (rec === undefined) {
+        await wisk.sync.saveModification();
+    }
 };
 
 wisk.editor.runBlockFunction = function (elementId, functionName, arg) {
@@ -968,6 +1249,17 @@ wisk.editor.convertMarkdownToElements = function (markdown) {
 
     // Remove YAML frontmatter if present
     markdown = markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+    // Remove Footnotes section (prevents duplication when pasting)
+    // This handles patterns like "## Footnotes", "8. Footnotes", "Footnotes", etc.
+    // and all content after them that looks like footnote definitions
+    markdown = markdown.replace(/^(#{1,6}\s*)?(\d+\.\s*)?Footnotes\s*\n([\s\S]*?)(?=^#{1,6}\s|\Z)/gm, '');
+
+    // Also remove standalone footnote definitions like "1. This is a footnote [link]"
+    // These are typically at the end of pasted content from other sources
+    markdown = markdown.replace(/^\d+\.\s+.*\[.*fnref.*\].*$/gm, '');
+    markdown = markdown.replace(/^\d+\.\s+.*↩.*$/gm, '');
+
     // Initialize elements array with the main element
     const elements = [
         {
@@ -1144,6 +1436,14 @@ function createHeadingElement(text, component) {
 }
 
 function convertInlineMarkdown(text) {
+    // Citation elements (must be before links to avoid conflicts)
+    text = text.replace(/--citation-element--([^-]+)--/g, (match, referenceId) => {
+        return `<cite-element reference-id="${referenceId}"></cite-element>`;
+    });
+
+    // Inline code (must be before other formatting to preserve code content)
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
     // Bold
     text = text.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     text = text.replace(/__(.+?)__/g, '<b>$1</b>');
@@ -1155,11 +1455,11 @@ function convertInlineMarkdown(text) {
     // Strikethrough
     text = text.replace(/~~(.+?)~~/g, '<strike>$1</strike>');
 
-    // Links
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    // Links (must be before reference numbers)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" contenteditable="false" target="_blank">$1</a>');
 
-    // Reference numbers
-    text = text.replace(/\[ref_(\d+)\]/g, '<span class="reference-number">[$1]</span>');
+    // Reference numbers (footnote markers) - superscript style
+    text = text.replace(/\[ref_(\d+)\]/g, '<sup><a href="#footnote-$1" class="reference-number" contenteditable="false">$1</a></sup>');
 
     return text;
 }

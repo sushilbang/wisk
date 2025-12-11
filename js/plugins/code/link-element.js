@@ -145,8 +145,12 @@ class LinkElement extends HTMLElement {
             display: this.displayMode
         };
 
-        if (this.isInternal) {
+        // Store title for all links (not just internal)
+        if (this.title) {
             value.title = this.title;
+        }
+
+        if (this.isInternal && this.icon) {
             value.icon = this.icon;
         }
 
@@ -170,7 +174,8 @@ class LinkElement extends HTMLElement {
     }
 
     getTextContent() {
-        const displayText = this.isInternal ? this.title : this.url;
+        // Use title for display when available, fallback to URL
+        const displayText = this.title || this.url;
         return {
             html: displayText,
             text: displayText,
@@ -433,8 +438,8 @@ class LinkElement extends HTMLElement {
                 `;
             }
         } else {
-            // Inline link rendering
-            const displayText = this.escapeHtml(this.isInternal ? (this.title || this.url) : this.url);
+            // Inline link rendering - use title when available, fallback to URL
+            const displayText = this.escapeHtml(this.title || this.url);
 
             this.shadowRoot.innerHTML = `
                 <style>

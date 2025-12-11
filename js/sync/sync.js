@@ -155,6 +155,40 @@ function applyEvent(document, event) {
     let current = document;
     let i = 0;
 
+    if (event.path === 'data.elementOrder') {
+        const newOrder = event.value.data;
+
+        // Store the order
+        if (!document.data) document.data = {};
+        document.data.elementOrder = newOrder;
+
+        // Reorder elements array to match
+        if (document.data.elements && Array.isArray(document.data.elements)) {
+            const orderedElements = [];
+            newOrder.forEach(id => {
+                const elem = document.data.elements.find(e => e.id === id);
+                if (elem) orderedElements.push(elem);
+            });
+            document.data.elements = orderedElements;
+        }
+
+        document.lastUpdated = event.value.timestamp;
+        console.log('Applied element order event');
+        return;
+    }
+
+    if (event.path === 'data.elements' && pathParts.length === 2) {
+        // This is a new element being added
+        if (!document.data) document.data = {};
+        if (!document.data.elements) {
+            document.data.elements = [];
+        }
+        document.data.elements.push(event.value.data);
+        document.lastUpdated = event.value.timestamp;
+        console.log('Applied element creation event for:', event.value.data.id);
+        return;
+    }
+
     // Navigate to the parent of the target property
     while (i < pathParts.length - 1) {
         const key = pathParts[i];
@@ -215,7 +249,6 @@ function applyEvent(document, event) {
     document.lastUpdated = event.value.timestamp;
 
     console.log('Applied event:', event);
-    console.log('Updated document:', document);
 }
 
 async function saveModification() {
@@ -257,6 +290,7 @@ async function saveModification() {
 }
 
 wisk.sync.saveModification = saveModification;
+wisk.sync.applyEvent = applyEvent;
 
 function handleIncomingMessage(message) {
     var m = JSON.parse(message);
