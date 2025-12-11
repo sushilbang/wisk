@@ -1250,16 +1250,6 @@ wisk.editor.convertMarkdownToElements = function (markdown) {
     // Remove YAML frontmatter if present
     markdown = markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
 
-    // Remove Footnotes section (prevents duplication when pasting)
-    // This handles patterns like "## Footnotes", "8. Footnotes", "Footnotes", etc.
-    // and all content after them that looks like footnote definitions
-    markdown = markdown.replace(/^(#{1,6}\s*)?(\d+\.\s*)?Footnotes\s*\n([\s\S]*?)(?=^#{1,6}\s|\Z)/gm, '');
-
-    // Also remove standalone footnote definitions like "1. This is a footnote [link]"
-    // These are typically at the end of pasted content from other sources
-    markdown = markdown.replace(/^\d+\.\s+.*\[.*fnref.*\].*$/gm, '');
-    markdown = markdown.replace(/^\d+\.\s+.*↩.*$/gm, '');
-
     // Initialize elements array with the main element
     const elements = [
         {
