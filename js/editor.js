@@ -121,30 +121,82 @@ wisk.editor.generateNewId = id => {
 };
 
 wisk.editor.addConfigChange = async function (id, value) {
+    const timestamp = Date.now();
     switch (id) {
         case 'document.config.name':
-            wisk.editor.document.data.config.name = value;
-            document.title = value;
-            break;
+            {
+                // create event:
+                wisk.sync.newChange({
+                    path: 'data.config.name',
+                    value: {
+                        data: value,
+                        timestamp: timestamp,
+                        agent: wisk.sync.agent
+                    }
+                });
+                document.title = value;
+                break;
+            }
         case 'document.config.theme':
-            wisk.editor.document.data.config.theme = value;
-            wisk.theme.setTheme(value);
-            break;
+            {
+                wisk.sync.newChange({
+                    path: 'data.config.theme',
+                    value: {
+                        data: value,
+                        timestamp: timestamp,
+                        agent: wisk.sync.agent
+                    }
+                });
+                wisk.theme.setTheme(value);
+                break;
+            }
         case 'document.config.plugins.add':
-            wisk.editor.document.data.config.plugins.push(value);
-            wisk.plugins.loadPlugin(value);
-            break;
+            {
+                // get new plugins and add new ones
+                const currentPlugins = [...wisk.editor.document.data.config.plugins, value];
+                wisk.sync.newChange({
+                    path: 'data.config.plugins',
+                    value: {
+                        data: currentPlugins,
+                        timestamp: timestamp,
+                        agent: wisk.sync.agent
+                    }
+                });
+                wisk.plugins.loadPlugin(value);
+                break;
+            }
         case 'document.config.plugins.remove':
-            wisk.editor.document.data.config.plugins = wisk.editor.document.data.config.plugins.filter(p => p !== value);
-            break;
+            {
+                // get current plugins and filter the removed ones
+                const filteredPlugins = wisk.editor.document.data.config.plugins.filter(p => p !== value);
+                wisk.sync.newChange({
+                    path: 'data.config.plugins',
+                    value: {
+                        data: filteredPlugins,
+                        timestamp: timestamp,
+                        agent: wisk.sync.agent
+                    }
+                });
+                break;
+            }
     }
-
-    await wisk.sync.saveUpdates();
+    await wisk.sync.saveModification();
 };
 
 wisk.editor.savePluginData = async function (identifier, data) {
-    wisk.editor.document.data.pluginData[identifier] = data;
-    await wisk.sync.saveUpdates();
+    const timestamp = Date.now();
+    // create event
+    wisk.sync.newChange({
+        path: `data.pluginData.${identifier}`,
+        value: {
+            data: data,
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
+    // plugin data changes are critical, save immediately
+    await wisk.sync.saveModification();
 };
 
 wisk.editor.getPluginData = function (identifier) {
@@ -181,6 +233,16 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
 
     const elementIndex = wisk.editor.document.data.elements.findIndex(e => e.id === elementId);
     wisk.editor.document.data.elements.splice(elementIndex + 1, 0, obj);
+
+    // NOTE: Do NOT create events for element creation because:
+    // 1. Elements are positional (splice inserts at specific index)
+    // 2. Events would push to end of array (wrong position!)
+    // 3. Element updates (typing, changes) are tracked via events through justUpdates()
+    // 4. Full document is saved to IndexedDB, so element creation is persisted
+
+    // For server sync (future): Need different approach for element creation
+    // - Option A: Send full elements array
+    // - Option B: Use index-aware event: {path: 'data.elements', index: X, value: obj}
 
     // TODO quick fix? idk if this is the best way to do it
     if (blockType === 'divider-element' || blockType === 'super-divider' || blockType === 'dots-divider') {
@@ -733,7 +795,7 @@ wisk.editor.showSelector = function (elementId, focusIdentifier) {
     selector.show(elementId);
 };
 
-wisk.editor.deleteBlock = function (elementId, rec) {
+wisk.editor.deleteBlock = async function (elementId, rec) {
     if (elementId === 'abcdxyz') {
         wisk.utils.showToast('Nah you cant do that.', 2000);
         return;
@@ -745,17 +807,41 @@ wisk.editor.deleteBlock = function (elementId, rec) {
         return;
     }
 
-    deletedElements.push(elementId);
-    const element = document.getElementById(`div-${elementId}`);
-    if (element) {
-        document.getElementById('editor').removeChild(element);
-        wisk.editor.document.data.elements = wisk.editor.document.data.elements.filter(e => e.id !== elementId);
-        deletedElementsLeft.push(elementId);
+    const elementData = wisk.editor.document.data.elements.find(e => e.id === elementId);
 
-        window.dispatchEvent(new CustomEvent('block-deleted', { detail: { id: elementId } }));
+    if(elementData) {
+        const timestamp = Date.now();
 
-        if (rec == undefined) {
-            wisk.editor.justUpdates();
+        // create event
+        wisk.sync.newChange({
+            path: 'data.deletedElements',
+            value: {
+                data: elementData,
+                timestamp: timestamp,
+                agent: wisk.sync.agent
+            }
+        });
+
+        // remove from DOM
+        const element = document.getElementById(`div-${elementId}`);
+        if(element) {
+            document.getElementById('editor').removeChild(element);
+
+            // remove from elements
+            wisk.editor.document.data.elements = wisk.editor.document.data.elements.filter(e => e.id !== elementId);
+            deletedElements.push(elementId);
+            deletedElementsLeft.push(elementId);
+
+            window.dispatchEvent(new CustomEvent('block-deleted', {
+                detail: {
+                    id: elementId
+                }
+            }));
+
+            // deletion is critical event
+            if(rec === undefined) {
+                await wisk.sync.saveModification();
+            }
         }
     }
 };
@@ -2146,76 +2232,205 @@ const menuActions = {
     deleteItem: elementId => deleteItem(elementId),
 };
 
-wisk.editor.justUpdates = async function (elementId) {
-    console.log('JUST UPDATES', elementId);
+// wisk.editor.justUpdates = async function (elementId) {
+//     console.log('JUST UPDATES', elementId);
 
-    // Handle nested elements with IDs containing hyphens
-    if (elementId && elementId.includes('-')) {
-        const eid = elementId.split('-')[0];
-        document.getElementById(eid).editor.justUpdates(elementId);
+//     // Handle nested elements with IDs containing hyphens
+//     if (elementId && elementId.includes('-')) {
+//         const eid = elementId.split('-')[0];
+//         document.getElementById(eid).editor.justUpdates(elementId);
+//         return;
+//     }
+
+//     window.dispatchEvent(new CustomEvent('something-updated', { detail: { id: elementId } }));
+
+//     if (elementId) {
+//         if (elementId === wisk.editor.document.data.elements[0].id) {
+//             document.title = byQuery('#' + elementId).getTextContent().text;
+//             wisk.editor.document.data.config.name = document.title;
+//             wisk.sync.newChange({
+//                 action: 'config',
+//                 key: 'name',
+//                 value: document.title,
+//             });
+//         }
+
+//         const element = wisk.editor.getElement(elementId);
+//         if (element) {
+//             const domElement = document.getElementById(elementId);
+//             if (domElement) {
+//                 element.value = domElement.getValue();
+//                 element.lastEdited = Math.floor(Date.now() / 1000);
+//                 element.component = domElement.tagName.toLowerCase();
+//                 document.getElementById('nav').classList.add('nav-disappear');
+//                 document.getElementById('getting-started').style.display = 'none';
+
+//                 if (!elementUpdatesLeft.includes(elementId)) {
+//                     elementUpdatesLeft.push(elementId);
+//                 }
+//             }
+//         }
+//     }
+
+//     clearTimeout(debounceTimer);
+//     debounceTimer = setTimeout(async () => {
+//         const changed = elementUpdatesLeft
+//             .map(elementId => {
+//                 const element = wisk.editor.getElement(elementId);
+//                 if (element) {
+//                     return {
+//                         path: 'document.elements',
+//                         values: {
+//                             id: element.id,
+//                             value: element.value,
+//                             lastEdited: element.lastEdited,
+//                             component: element.component,
+//                         },
+//                     };
+//                 }
+//                 return null;
+//             })
+//             .filter(Boolean);
+
+//         const elementIds = wisk.editor.document.data.elements.map(e => e.id);
+
+//         await wisk.sync.saveUpdates();
+
+//         elementUpdatesLeft = [];
+//         deletedElementsLeft = [];
+//     }, elementSyncTimer); // should it be less? to voice your opinion, join our discord server: https://discord.gg/D8tQCvgDhu
+// };
+
+// TODO remove??? idk
+
+const elementUpdatesNeeded = new Set(); // track elements needing update
+
+wisk.editor.justUpdates = async function (elementIdOrEvent) {
+    console.log('justUpdates called with:', elementIdOrEvent);
+
+    // handle event objects passed directly
+    if(typeof elementIdOrEvent === 'object') {
+        wisk.sync.newChange(elementIdOrEvent);
+
+        console.log('critical event, saving immediately');
+        await wisk.sync.saveModification();
+
+        // TODO: Send event to server here
         return;
     }
 
-    window.dispatchEvent(new CustomEvent('something-updated', { detail: { id: elementId } }));
-
-    if (elementId) {
-        if (elementId === wisk.editor.document.data.elements[0].id) {
-            document.title = byQuery('#' + elementId).getTextContent().text;
-            wisk.editor.document.data.config.name = document.title;
-            wisk.sync.newChange({
-                action: 'config',
-                key: 'name',
-                value: document.title,
-            });
+    const elementId = elementIdOrEvent;
+    // handle nested elements
+    if(elementId && elementId.includes('-')) {
+        const eid = elementId.split('-')[0];
+        const parentElement = document.getElementById(eid);
+        if(parentElement && parentElement.editor) {
+            parentElement.editor.justUpdates(elementId);
         }
-
-        const element = wisk.editor.getElement(elementId);
-        if (element) {
-            const domElement = document.getElementById(elementId);
-            if (domElement) {
-                element.value = domElement.getValue();
-                element.lastEdited = Math.floor(Date.now() / 1000);
-                element.component = domElement.tagName.toLowerCase();
-                document.getElementById('nav').classList.add('nav-disappear');
-                document.getElementById('getting-started').style.display = 'none';
-
-                if (!elementUpdatesLeft.includes(elementId)) {
-                    elementUpdatesLeft.push(elementId);
-                }
-            }
-        }
+        return;
     }
 
+    if(!elementId) {
+        return;
+    }
+
+    // mark element as needing update (not creating events yet)
+    elementUpdatesNeeded.add(elementId);
+
+    // UI updates
+    const nav = document.getElementById('nav');
+    if(nav) {
+        nav.classList.add('nav-disappear');
+    }
+
+    const gettingStarted = document.getElementById('getting-started');
+    if(gettingStarted) {
+        gettingStarted.style.display = 'none';
+    }
+
+    // dispatch event
+    window.dispatchEvent(new CustomEvent('something-updates', {
+        detail: { id: elementId }
+    }));
+
+    // debounce: creating events when typing stops. (what if the user closes the tab before debounce triggers???)
+
     clearTimeout(debounceTimer);
+
     debounceTimer = setTimeout(async () => {
-        const changed = elementUpdatesLeft
-            .map(elementId => {
-                const element = wisk.editor.getElement(elementId);
-                if (element) {
-                    return {
-                        path: 'document.elements',
-                        values: {
-                            id: element.id,
-                            value: element.value,
-                            lastEdited: element.lastEdited,
-                            component: element.component,
-                        },
-                    };
+        console.log('typing stopped, creating events for: ', elementUpdatesNeeded.size, 'elements');
+
+        const timestamp = Date.now();
+
+        // create events for all elements needing update
+        elementUpdatesNeeded.forEach(elementId => {
+            const domElement = document.getElementById(elementId);
+            if(!domElement) {
+                return;
+            }
+
+            const elementValue = domElement.getValue();
+            const componentName = domElement.tagName.toLowerCase();
+
+            // create event
+            wisk.sync.newChange({
+                path: `data.elements.${elementId}.value`,
+                value: {
+                    data: elementValue,
+                    timestamp: timestamp,
+                    agent: wisk.sync.agent
                 }
-                return null;
-            })
-            .filter(Boolean);
+            });
 
-        const elementIds = wisk.editor.document.data.elements.map(e => e.id);
+            // component because they can be changed (changeBlockType)
 
-        await wisk.sync.saveUpdates();
+            wisk.sync.newChange({
+                path: `data.elements.${elementId}.component`,
+                value: {
+                    data: componentName,
+                    timestamp: timestamp,
+                    agent: wisk.sync.agent
+                }
+            });
 
-        elementUpdatesLeft = [];
-        deletedElementsLeft = [];
-    }, elementSyncTimer); // should it be less? to voice your opinion, join our discord server: https://discord.gg/D8tQCvgDhu
+            wisk.sync.newChange({
+                path: `data.elements.${elementId}.lastUpdated`,
+                value: {
+                    data: timestamp,
+                    timestamp: timestamp,
+                    agent: wisk.sync.agent
+                }
+            });
+
+            // special case: first element
+            if(elementId === wisk.editor.document.data.elements[0].id) {
+                const textContent = domElement.getTextContent().text || '';
+
+                if(textContent) {
+                    document.title = textContent;
+                    wisk.sync.newChange({
+                        path: 'data.config.name',
+                        value: {
+                            data: textContent, 
+                            timestamp: timestamp,
+                            agent: wisk.sync.agent
+                        }
+                    });
+                }
+            }
+        });
+
+        // save to indexedDB locally
+        await wisk.sync.saveModification();
+
+        // TODO: Send only the events to server (future step)
+        // await sendEventsToServer(wisk.sync.eventLog);
+
+        // Clear the set
+        elementUpdatesNeeded.clear();
+    }, 1000);
 };
 
-// TODO remove??? idk
 function initKeyboardDetection() {
     // Use Visual Viewport API (better browser support)
     if (window.visualViewport) {

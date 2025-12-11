@@ -2,6 +2,9 @@
 let socket;
 let firstMsg = true;
 
+// events
+wisk.sync.eventLog = [];
+
 async function sync() {
     wisk.utils.showLoading('Syncing with server...');
     console.log('PAGE', wisk.editor.pageId);
@@ -124,6 +127,136 @@ async function saveUpdates() {
 }
 
 wisk.sync.saveUpdates = saveUpdates;
+
+wisk.sync.newChange = function(event) {
+    // validate event structure
+    if(!event.path || !event.value || !event.value.data === undefined) {
+        console.error('invalid event: ', event);
+        return;
+    }
+
+    // ensure required metadata
+    if(!event.value.timestamp) {
+        event.value.timestamp = Date.now();
+    }
+    if(!event.value.agent) {
+        event.value.agent = wisk.sync.agent;
+    }
+
+    // add to event log
+    wisk.sync.eventLog.push(event);
+
+    console.log('New change event logged:', event);
+    console.log('Current event log:', wisk.sync.eventLog);
+}
+
+function applyEvent(document, event) {
+    const pathParts = event.path.split('.');
+    let current = document;
+    let i = 0;
+
+    // Navigate to the parent of the target property
+    while (i < pathParts.length - 1) {
+        const key = pathParts[i];
+
+        // Handle array operations for elements
+        if (key === 'elements' && current[key] && Array.isArray(current[key])) {
+            i++;
+            const elementId = pathParts[i];
+            const element = current.elements.find(e => e.id === elementId);
+
+            if (!element) {
+                console.warn(`Element ${elementId} not found, skipping event`);
+                return;
+            }
+
+            current = element;
+            i++;
+            continue;
+        }
+
+        // Normal object navigation with safety checks
+        if (!current[key] || typeof current[key] !== 'object' || Array.isArray(current[key])) {
+            // Property doesn't exist, is null, is wrong type, or is array - create object
+            current[key] = {};
+            console.log(`Created missing intermediate object: ${pathParts.slice(0, i + 1).join('.')}`);
+        }
+
+        current = current[key];
+        i++;
+    }
+
+    // Set the final value
+    const lastKey = pathParts[pathParts.length - 1];
+    const actualValue = event.value.data;
+
+    // Special handling for array operations
+    if (lastKey === 'deletedElements' && Array.isArray(current[lastKey])) {
+        current[lastKey].push(actualValue);
+        console.log(`Applied event: pushed to deletedElements`);
+    } else if (lastKey === 'elements' && Array.isArray(current[lastKey])) {
+        current[lastKey].push(actualValue);
+        console.log(`Applied event: added new element`);
+    } else {
+        // For array targets, create array if needed
+        if (lastKey === 'deletedElements' || lastKey === 'elements') {
+            if (!current[lastKey]) {
+                current[lastKey] = [];
+            }
+            current[lastKey].push(actualValue);
+        } else {
+            // Normal property set
+            current[lastKey] = actualValue;
+        }
+        console.log(`Applied event to ${event.path}`);
+    }
+
+    // Update document timestamp
+    document.lastUpdated = event.value.timestamp;
+
+    console.log('Applied event:', event);
+    console.log('Updated document:', document);
+}
+
+async function saveModification() {
+    console.log('Saving modifications. Event log:', wisk.sync.eventLog);
+
+    if (!wisk.sync.eventLog || wisk.sync.eventLog.length === 0) {
+        console.log('No events to save');
+        return;
+    }
+
+    // Apply all pending events to the in-memory document
+    wisk.sync.eventLog.forEach(event => {
+        applyEvent(wisk.editor.document, event);
+    });
+
+    // Ensure sync object exists
+    if (!wisk.editor.document.data.sync) {
+        wisk.editor.document.data.sync = {
+            syncLogs: [],
+            isPushed: false,
+            lastSync: 0
+        };
+    }
+
+    // Store events in syncLogs for history/sync purposes
+    if (!wisk.editor.document.data.sync.syncLogs) {
+        wisk.editor.document.data.sync.syncLogs = [];
+    }
+    wisk.editor.document.data.sync.syncLogs.push(...wisk.sync.eventLog);
+
+    // Save to IndexedDB (materialized document + event logs)
+    await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
+
+    console.log('Saved document with', wisk.sync.eventLog.length, 'events');
+    console.log('Total events in syncLogs:', wisk.editor.document.data.sync.syncLogs.length);
+
+    // Clear the event log after successful save
+    wisk.sync.eventLog = [];
+}
+
+wisk.sync.saveModification = saveModification;
 
 function handleIncomingMessage(message) {
     var m = JSON.parse(message);
