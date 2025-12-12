@@ -150,7 +150,7 @@ class LinkElement extends HTMLElement {
     getTextContent() {
         const displayText = this.title || this.url;
         return {
-            html: displayText,
+            html: this.escapeHtml(displayText),
             text: displayText,
             markdown: `[${displayText}](${this.url})`
         };

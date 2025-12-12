@@ -9,17 +9,61 @@ class EmbedElement extends HTMLElement {
   connectedCallback() {
     this.iframe = this.shadowRoot.querySelector('iframe');
     this.container = this.shadowRoot.querySelector('.embed-container');
+    this.inputDialog = this.shadowRoot.querySelector('.input-dialog');
+    this.urlInput = this.shadowRoot.querySelector('.url-input');
+    this.submitBtn = this.shadowRoot.querySelector('.submit-btn');
     this.bindEvents();
-    this.updateIframeSource();
+    this.updateView();
   }
 
   bindEvents() {
-    // Make container focusable for keyboard events
+    // Container keyboard events (when embed is showing)
     this.container.setAttribute('tabindex', '0');
-
     this.container.addEventListener('keydown', (event) => {
+      if (!this.link) return; // Only handle when showing embed
       this.handleKeyDown(event);
     });
+
+    // Input field events
+    this.urlInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.submitUrl();
+      } else if (event.key === 'Backspace' && this.urlInput.value === '') {
+        event.preventDefault();
+        wisk.editor.deleteBlock(this.id);
+      } else if (event.key === 'ArrowUp' || (event.key === 'ArrowLeft' && this.urlInput.selectionStart === 0)) {
+        if (this.urlInput.selectionStart === 0) {
+          event.preventDefault();
+          const prevElement = wisk.editor.prevElement(this.id);
+          if (prevElement) {
+            wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+          }
+        }
+      } else if (event.key === 'ArrowDown' || (event.key === 'ArrowRight' && this.urlInput.selectionStart === this.urlInput.value.length)) {
+        if (this.urlInput.selectionStart === this.urlInput.value.length) {
+          event.preventDefault();
+          const nextElement = wisk.editor.nextElement(this.id);
+          if (nextElement) {
+            wisk.editor.focusBlock(nextElement.id, { x: 0 });
+          }
+        }
+      }
+    });
+
+    // Submit button click
+    this.submitBtn.addEventListener('click', () => {
+      this.submitUrl();
+    });
+  }
+
+  submitUrl() {
+    const url = this.urlInput.value.trim();
+    if (url) {
+      this.link = url;
+      this.updateView();
+      this.sendUpdates();
+    }
   }
 
   handleKeyDown(event) {
@@ -34,21 +78,23 @@ class EmbedElement extends HTMLElement {
         wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });
         break;
       case 'ArrowUp':
-      case 'ArrowLeft':
+      case 'ArrowLeft': {
         event.preventDefault();
         const prevElement = wisk.editor.prevElement(this.id);
         if (prevElement) {
           wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
         }
         break;
+      }
       case 'ArrowDown':
-      case 'ArrowRight':
+      case 'ArrowRight': {
         event.preventDefault();
         const nextElement = wisk.editor.nextElement(this.id);
         if (nextElement) {
           wisk.editor.focusBlock(nextElement.id, { x: 0 });
         }
         break;
+      }
     }
   }
 
@@ -63,30 +109,23 @@ class EmbedElement extends HTMLElement {
   }
 
   setValue(path, value) {
-    console.log('[Embed] setValue called with:', path, value);
-
     let content = value.textContent || '';
 
     // Handle iframe embed code
     if (content && content.includes('<iframe')) {
       const extracted = this.extractSrcFromIframe(content);
       if (extracted) {
-        console.log('[Embed] Extracted URL from iframe code:', extracted);
         content = extracted;
       }
     }
 
-    // Store link directly (editable is commented out)
     if (path === 'value.append') {
       this.link += content;
     } else {
       this.link = content;
     }
 
-    // Update iframe immediately
-    setTimeout(() => {
-      this.updateIframeSource();
-    }, 0);
+    this.updateView();
   }
 
   getValue() {
@@ -95,10 +134,14 @@ class EmbedElement extends HTMLElement {
     };
   }
 
+  sendUpdates() {
+    setTimeout(() => {
+      wisk.editor.justUpdates(this.id);
+    }, 0);
+  }
+
   convertToEmbedUrl(url) {
     // YouTube
-    // youtube.com/watch?v=VIDEO_ID → youtube.com/embed/VIDEO_ID
-    // youtu.be/VIDEO_ID → youtube.com/embed/VIDEO_ID
     if (url.includes('youtube.com/watch')) {
       const videoId = url.match(/[?&]v=([^&]+)/);
       if (videoId) {
@@ -113,19 +156,14 @@ class EmbedElement extends HTMLElement {
     }
 
     // Google Maps
-    // Convert various Google Maps URLs to embed format
     if (url.includes('google.com/maps')) {
-      // If already embed format, use as is
       if (url.includes('/embed')) {
         return url.startsWith('http') ? url : 'https://' + url;
       }
-      // Otherwise, extract place or coordinates and convert
-      // For now, just add embed if it's a maps URL
       return url.startsWith('http') ? url : 'https://' + url;
     }
 
     // Google Drive
-    // drive.google.com/file/d/FILE_ID/view → drive.google.com/file/d/FILE_ID/preview
     if (url.includes('drive.google.com/file')) {
       const fileId = url.match(/\/d\/([^/]+)/);
       if (fileId) {
@@ -134,8 +172,6 @@ class EmbedElement extends HTMLElement {
     }
 
     // GitHub Gist
-    // gist.github.com/USERNAME/GIST_ID → gist.github.com/USERNAME/GIST_ID with .pibb extension for embedding
-    // Actually, Gists don't embed well in iframes, we'll just use the URL
     if (url.includes('gist.github.com')) {
       return url.startsWith('http') ? url : 'https://' + url;
     }
@@ -144,32 +180,40 @@ class EmbedElement extends HTMLElement {
     return url.startsWith('http') ? url : 'https://' + url;
   }
 
-  updateIframeSource() {
-    if (!this.iframe) return;
+  updateView() {
+    if (!this.iframe || !this.inputDialog) return;
 
-    let url = this.link.trim();
+    if (this.link && this.link.trim()) {
+      // Show embed, hide input dialog
+      this.inputDialog.style.display = 'none';
 
-    // Remove https:// prefix if present (user might type it)
-    url = url.replace(/^https?:\/\//, '');
+      let url = this.link.trim();
+      url = url.replace(/^https?:\/\//, '');
+      url = this.convertToEmbedUrl(url);
 
-    // Convert to embed URL if it's a supported service
-    url = this.convertToEmbedUrl(url);
-
-    console.log('[Embed] Updating iframe source to:', url);
-
-    if (url && url !== 'https://') {
-      this.iframe.src = url;
-      this.iframe.style.display = 'block';
+      if (url && url !== 'https://') {
+        this.iframe.src = url;
+        this.iframe.style.display = 'block';
+      }
     } else {
-      this.iframe.src = '';
+      // Show input dialog, hide embed
+      this.inputDialog.style.display = 'block';
       this.iframe.style.display = 'none';
+      this.iframe.src = '';
     }
   }
 
   focus(identifier) {
-    // Focus the container for keyboard events
-    if (this.container) {
-      this.container.focus();
+    if (this.link && this.link.trim()) {
+      // Focus container when showing embed
+      if (this.container) {
+        this.container.focus();
+      }
+    } else {
+      // Focus input when showing dialog
+      if (this.urlInput) {
+        this.urlInput.focus();
+      }
     }
   }
 
@@ -204,6 +248,61 @@ class EmbedElement extends HTMLElement {
           box-shadow: 0 0 0 2px var(--bg-accent);
         }
 
+        .input-dialog {
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
+          background: var(--bg-2);
+        }
+
+        .url-input {
+          width: 100%;
+          max-width: 300px;
+          padding: 10px 12px;
+          border: 1px solid var(--border-1);
+          border-radius: var(--radius);
+          background: var(--bg-1);
+          color: var(--fg-1);
+          font-size: 14px;
+          font-family: var(--font);
+          outline: none;
+        }
+
+        .url-input:focus {
+          border-color: var(--fg-accent);
+        }
+
+        .url-input::placeholder {
+          color: var(--fg-3);
+        }
+
+        .submit-btn {
+          width: 100%;
+          max-width: 300px;
+          padding: 10px 16px;
+          background: var(--fg-accent);
+          color: var(--bg-accent);
+          border: none;
+          border-radius: var(--radius);
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: opacity 0.15s ease;
+          font-family: var(--font);
+        }
+
+        .submit-btn:hover {
+          opacity: 0.9;
+        }
+
+        .helper-text {
+          font-size: 12px;
+          color: var(--fg-3);
+          text-align: center;
+        }
+
         iframe {
           width: 100%;
           height: 450px;
@@ -217,6 +316,11 @@ class EmbedElement extends HTMLElement {
 
     const content = `
       <div class="embed-container">
+        <div class="input-dialog">
+          <input type="text" class="url-input" placeholder="Paste in https://..." />
+          <button class="submit-btn">Embed link</button>
+          <div class="helper-text">Works with links of PDFs, Google Drive, Google Maps, CodePen...</div>
+        </div>
         <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" allowfullscreen></iframe>
       </div>
     `;

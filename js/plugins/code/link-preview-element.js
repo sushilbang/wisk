@@ -4,55 +4,205 @@ class LinkPreviewElement extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         this.link = '';
         this.metadata = null;
+        this.status = 'idle';
+        this._hasConnected = false;
         this.render();
-        this.isVirtualKeyboard = this.checkIfVirtualKeyboard();
-        this.debounceTimer = null;
-    }
-
-    checkIfVirtualKeyboard() {
-        return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     }
 
     connectedCallback() {
-        // this.editable = this.shadowRoot.querySelector('#editable');
-        // this.bindEvents();
+        this.outer = this.shadowRoot.querySelector('.outer');
+        this.inputDialog = this.shadowRoot.querySelector('.input-dialog');
+        this.previewContent = this.shadowRoot.querySelector('.preview-content');
+        this.urlInput = this.shadowRoot.querySelector('.url-input');
+        this.submitBtn = this.shadowRoot.querySelector('.submit-btn');
+        this.bindEvents();
+        this._hasConnected = true;
+        this.updateView();
 
-        // Make the entire preview clickable
-        const outer = this.shadowRoot.querySelector('.outer');
-        if (outer) {
-            outer.addEventListener('click', () => {
-                if (this.link) {
-                    let url = this.link;
-                    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                        url = 'https://' + url;
-                    }
-                    window.open(url, '_blank');
+        if (this.link && this.link.trim() && !this.metadata && this.status === 'idle') {
+            this.updateLinkPreview();
+        }
+    }
+
+    bindEvents() {
+        if (!this.outer) return;
+
+        this.outer.setAttribute('tabindex', '0');
+
+        if (this.handleClick) {
+            this.outer.removeEventListener('click', this.handleClick);
+        }
+        if (this.boundHandleKeyDown) {
+            this.outer.removeEventListener('keydown', this.boundHandleKeyDown);
+        }
+
+        this.handleClick = (event) => {
+            if (this.link && !event.target.closest('.input-dialog')) {
+                let url = this.link;
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    url = 'https://' + url;
                 }
-            });
+                window.open(url, '_blank');
+            }
+        };
+
+        this.boundHandleKeyDown = (event) => {
+            if (!this.link) return;
+            this.handleKeyDown(event);
+        };
+
+        this.outer.addEventListener('click', this.handleClick);
+        this.outer.addEventListener('keydown', this.boundHandleKeyDown);
+
+        this.urlInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                this.submitUrl();
+            } else if (event.key === 'Backspace' && this.urlInput.value === '') {
+                event.preventDefault();
+                wisk.editor.deleteBlock(this.id);
+            } else if (event.key === 'ArrowUp' || (event.key === 'ArrowLeft' && this.urlInput.selectionStart === 0)) {
+                if (this.urlInput.selectionStart === 0) {
+                    event.preventDefault();
+                    const prevElement = wisk.editor.prevElement(this.id);
+                    if (prevElement) {
+                        wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+                    }
+                }
+            } else if (event.key === 'ArrowDown' || (event.key === 'ArrowRight' && this.urlInput.selectionStart === this.urlInput.value.length)) {
+                if (this.urlInput.selectionStart === this.urlInput.value.length) {
+                    event.preventDefault();
+                    const nextElement = wisk.editor.nextElement(this.id);
+                    if (nextElement) {
+                        wisk.editor.focusBlock(nextElement.id, { x: 0 });
+                    }
+                }
+            }
+        });
+
+        this.submitBtn.addEventListener('click', () => {
+            this.submitUrl();
+        });
+    }
+
+    disconnectedCallback() {
+        if (this.outer) {
+            if (this.handleClick) {
+                this.outer.removeEventListener('click', this.handleClick);
+            }
+            if (this.boundHandleKeyDown) {
+                this.outer.removeEventListener('keydown', this.boundHandleKeyDown);
+            }
+        }
+    }
+
+    submitUrl() {
+        const url = this.urlInput.value.trim();
+        if (!url) return;
+
+        const normalized = url;
+
+        if (normalized !== this.link) {
+            this.link = normalized;
+            this.metadata = null;
+            this.status = 'idle';
+        } else {
+            if (!this.metadata) this.status = 'idle';
+        }
+
+        this.updateView();
+
+        if (this.link && this.link.trim() && !this.metadata && this.status === 'idle') {
+            this.updateLinkPreview();
+        }
+
+        this.sendUpdates();
+    }
+
+    handleKeyDown(event) {
+        switch (event.key) {
+            case 'Backspace':
+            case 'Delete':
+                event.preventDefault();
+                wisk.editor.deleteBlock(this.id);
+                break;
+            case 'Enter':
+                event.preventDefault();
+                wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });
+                break;
+            case 'ArrowUp':
+            case 'ArrowLeft': {
+                event.preventDefault();
+                const prevElement = wisk.editor.prevElement(this.id);
+                if (prevElement) {
+                    wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+                }
+                break;
+            }
+            case 'ArrowDown':
+            case 'ArrowRight': {
+                event.preventDefault();
+                const nextElement = wisk.editor.nextElement(this.id);
+                if (nextElement) {
+                    wisk.editor.focusBlock(nextElement.id, { x: 0 });
+                }
+                break;
+            }
+        }
+    }
+
+    focus(identifier) {
+        if (this.link && this.link.trim()) {
+            if (this.outer) {
+                this.outer.focus();
+            }
+        } else {
+            if (this.urlInput) {
+                this.urlInput.focus();
+            }
         }
     }
 
     setValue(path, value) {
         if (path === 'value.append') {
-            this.link += value.textContent;
-        } else {
-            const newLink = value.textContent || '';
+            const appendText = value?.textContent || '';
+            const nextLink = (this.link || '') + appendText;
+            const linkChanged = nextLink !== this.link;
 
-            // If link changed, reset metadata
-            if (newLink !== this.link) {
+            this.link = nextLink;
+
+            if (linkChanged) {
                 this.metadata = null;
+                this.status = 'idle';
+            }
+        } else {
+            const incomingLink = value?.textContent || '';
+            const linkChanged = incomingLink !== this.link;
+
+            this.link = incomingLink;
+
+            if (value && Object.prototype.hasOwnProperty.call(value, 'metadata')) {
+                this.metadata = value.metadata || null;
             }
 
-            this.link = newLink;
-
-            if (value.metadata) {
-                this.metadata = value.metadata;
-                this.updatePreviewWithMetadata(this.metadata);
-            } else if (this.link && this.link.trim()) {
-                this.updateLinkPreview();
-            } else {
-                this.resetPreview();
+            if (value && Object.prototype.hasOwnProperty.call(value, 'status')) {
+                this.status = value.status || 'idle';
             }
+
+            if (linkChanged) {
+                this.metadata = null;
+                this.status = 'idle';
+            }
+
+            if (this.metadata) {
+                this.status = 'ok';
+            }
+        }
+
+        this.updateView();
+
+        if (this._hasConnected && this.link && this.link.trim() && !this.metadata && this.status === 'idle') {
+            this.updateLinkPreview();
         }
     }
 
@@ -60,7 +210,32 @@ class LinkPreviewElement extends HTMLElement {
         return {
             textContent: this.link,
             metadata: this.metadata,
+            status: this.status,
         };
+    }
+
+    updateView() {
+        if (!this.inputDialog || !this.previewContent) return;
+
+        if (this.link && this.link.trim()) {
+            this.inputDialog.style.display = 'none';
+            this.previewContent.style.display = 'flex';
+
+            if (this.metadata) {
+                this.updatePreviewWithMetadata(this.metadata);
+                return;
+            }
+
+            if (this.status === 'error') {
+                this.showErrorState();
+                return;
+            }
+
+            this.showLoadingState();
+        } else {
+            this.inputDialog.style.display = 'flex';
+            this.previewContent.style.display = 'none';
+        }
     }
 
     updatePreviewWithMetadata(metadata) {
@@ -69,51 +244,56 @@ class LinkPreviewElement extends HTMLElement {
         const imageElement = this.shadowRoot.querySelector('.link-preview-image');
         const metaElement = this.shadowRoot.querySelector('.link-preview-meta');
 
-        titleElement.textContent = metadata.title || 'No title available';
-
-        if (metadata.description) {
-            descElement.textContent = metadata.description;
-            descElement.style.display = 'block';
-        } else {
-            descElement.style.display = 'none';
+        if (titleElement) {
+            titleElement.textContent = metadata.title || 'No title available';
         }
 
-        if (metadata.favicon) {
-            imageElement.src = metadata.favicon;
-            imageElement.onerror = () => {
-                imageElement.src = '';
-            };
+        if (descElement) {
+            if (metadata.description) {
+                descElement.textContent = metadata.description;
+                descElement.style.display = 'block';
+            } else {
+                descElement.style.display = 'none';
+            }
         }
 
-        let metaInfo = [];
-        if (metadata.siteName) metaInfo.push(metadata.siteName);
-        if (metadata.author) metaInfo.push(`By ${metadata.author}`);
-        if (metadata.publishDate) {
-            const date = new Date(metadata.publishDate);
-            metaInfo.push(date.toLocaleDateString());
+        if (imageElement) {
+            if (metadata.favicon) {
+                imageElement.src = metadata.favicon;
+                imageElement.style.display = 'block';
+                imageElement.onerror = () => {
+                    imageElement.style.display = 'none';
+                };
+            } else {
+                imageElement.style.display = 'none';
+            }
         }
 
-        if (metaInfo.length > 0) {
-            metaElement.textContent = metaInfo.join(' • ');
-            metaElement.style.display = 'block';
-        } else {
-            metaElement.style.display = 'none';
+        if (metaElement) {
+            let metaInfo = [];
+            if (metadata.siteName) metaInfo.push(metadata.siteName);
+            if (metadata.author) metaInfo.push(`By ${metadata.author}`);
+            if (metadata.publishDate) {
+                const date = new Date(metadata.publishDate);
+                metaInfo.push(date.toLocaleDateString());
+            }
+
+            if (metaInfo.length > 0) {
+                metaElement.textContent = metaInfo.join(' • ');
+                metaElement.style.display = 'block';
+            } else {
+                metaElement.style.display = 'none';
+            }
         }
     }
 
     async updateLinkPreview() {
-        // Don't fetch if no link
-        if (!this.link || !this.link.trim()) {
-            this.resetPreview();
-            return;
-        }
+        if (!this.link || !this.link.trim() || this.metadata) return;
+        if (this.status === 'loading' || this.status === 'ok' || this.status === 'error') return;
 
-        // Don't fetch if we already have metadata for this exact link
-        if (this.metadata) {
-            return;
-        }
-
+        this.status = 'loading';
         this.showLoadingState();
+        this.sendUpdates();
 
         try {
             let url = this.link;
@@ -121,13 +301,9 @@ class LinkPreviewElement extends HTMLElement {
                 url = 'https://' + url;
             }
 
-            // console.log('[LinkPreview] Fetching metadata for:', url);
-
             const response = await fetch('https://render.wisk.cc/fetch-metadata', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url }),
             });
 
@@ -141,140 +317,73 @@ class LinkPreviewElement extends HTMLElement {
                 throw new Error(metadata.error);
             }
 
-            // console.log('[LinkPreview] Received metadata:', metadata);
-
             this.metadata = metadata;
+            this.status = 'ok';
             this.updatePreviewWithMetadata(metadata);
             this.sendUpdates();
         } catch (error) {
             console.error('Error fetching metadata:', error);
-            this.showErrorState();
             this.metadata = null;
+            this.status = 'error';
+            this.showErrorState();
+            this.sendUpdates();
         }
-    }
-
-    resetPreview() {
-        const titleElement = this.shadowRoot.querySelector('.link-preview-title');
-        const descElement = this.shadowRoot.querySelector('.link-preview-description');
-        const imageElement = this.shadowRoot.querySelector('.link-preview-image');
-        const metaElement = this.shadowRoot.querySelector('.link-preview-meta');
-
-        titleElement.textContent = 'Enter a URL to preview';
-        descElement.style.display = 'none';
-        imageElement.src = '';
-        metaElement.style.display = 'none';
-        this.metadata = null;
     }
 
     showLoadingState() {
+        if (this.inputDialog && this.previewContent) {
+            this.inputDialog.style.display = 'none';
+            this.previewContent.style.display = 'flex';
+        }
+
         const titleElement = this.shadowRoot.querySelector('.link-preview-title');
         const descElement = this.shadowRoot.querySelector('.link-preview-description');
         const imageElement = this.shadowRoot.querySelector('.link-preview-image');
         const metaElement = this.shadowRoot.querySelector('.link-preview-meta');
 
-        titleElement.textContent = 'Loading...';
-        descElement.style.display = 'none';
-        imageElement.src = '';
-        metaElement.style.display = 'none';
+        if (titleElement) {
+            titleElement.textContent = 'Loading preview...';
+        }
+        if (descElement) {
+            descElement.style.display = 'none';
+        }
+        if (imageElement) {
+            imageElement.style.display = 'none';
+        }
+        if (metaElement) {
+            metaElement.style.display = 'none';
+        }
     }
 
     showErrorState() {
+        if (this.inputDialog && this.previewContent) {
+            this.inputDialog.style.display = 'none';
+            this.previewContent.style.display = 'flex';
+        }
+
         const titleElement = this.shadowRoot.querySelector('.link-preview-title');
         const descElement = this.shadowRoot.querySelector('.link-preview-description');
         const imageElement = this.shadowRoot.querySelector('.link-preview-image');
         const metaElement = this.shadowRoot.querySelector('.link-preview-meta');
 
-        titleElement.textContent = 'Unable to load preview';
-        descElement.style.display = 'none';
-        imageElement.src = '';
-        metaElement.style.display = 'none';
-    }
-
-    handleSpecialKeys(event) {
-        const keyHandlers = {
-            Enter: () => this.handleEnterKey(event),
-            Backspace: () => this.handleBackspace(event),
-            Tab: () => this.handleTab(event),
-            ArrowLeft: () => this.handleArrowKey(event, 'next-up', 0),
-            ArrowRight: () => this.handleArrowKey(event, 'next-down', this.editable.innerText.length),
-        };
-
-        const handler = keyHandlers[event.key];
-        return handler ? handler() : false;
-    }
-
-    handleEnterKey(event) {
-        if (!this.isVirtualKeyboard) {
-            event.preventDefault();
-            wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });
-            return true;
-        }
-        return false;
-    }
-
-    handleBackspace(event) {
-        if (this.editable.innerText.length === 0) {
-            event.preventDefault();
-            wisk.editor.deleteBlock(this.id);
-            return true;
-        }
-        return false;
-    }
-
-    handleTab(event) {
-        event.preventDefault();
-        return true;
-    }
-
-    handleArrowKey(event, direction, targetOffset) {
-        const currentOffset = this.getCurrentOffset();
-        if (currentOffset === targetOffset) {
-            event.preventDefault();
-            if (direction === 'next-up') {
-                var prevElement = wisk.editor.prevElement(this.id);
-                if (prevElement != null) {
-                    const prevComponentDetail = wisk.plugins.getPluginDetail(prevElement.component);
-                    if (prevComponentDetail.textual) {
-                        wisk.editor.focusBlock(prevElement.id, { x: prevElement.value.textContent.length });
-                    }
-                }
-            } else if (direction === 'next-down') {
-                var nextElement = wisk.editor.nextElement(this.id);
-                if (nextElement != null) {
-                    const nextComponentDetail = wisk.plugins.getPluginDetail(nextElement.component);
-                    if (nextComponentDetail.textual) {
-                        wisk.editor.focusBlock(nextElement.id, { x: 0 });
-                    }
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    getCurrentOffset() {
-        const selection = this.shadowRoot.getSelection();
-        return selection.rangeCount ? selection.getRangeAt(0).startOffset : 0;
-    }
-
-    onValueUpdated(event) {
-        const text = this.editable.innerText;
-        if (this.handleSpecialKeys(event)) {
-            return;
+        if (titleElement) {
+            titleElement.textContent = 'Unable to load preview';
         }
 
-        if (this.link !== text) {
-            this.metadata = null;
+        if (descElement && this.link) {
+            descElement.textContent = this.link.startsWith('http') ? this.link : 'https://' + this.link;
+            descElement.style.display = 'block';
+        } else if (descElement) {
+            descElement.style.display = 'none';
         }
 
-        this.link = text;
-        this.sendUpdates();
+        if (imageElement) {
+            imageElement.style.display = 'none';
+        }
 
-        if (!this.metadata && text) {
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => {
-                this.updateLinkPreview();
-            }, 500);
+        if (metaElement) {
+            metaElement.textContent = 'Click to open link';
+            metaElement.style.display = 'block';
         }
     }
 
@@ -293,16 +402,6 @@ class LinkPreviewElement extends HTMLElement {
                 margin: 0;
                 font-family: var(--font);
             }
-            .link {
-                outline: none;
-                padding: 0;
-                border: none;
-                font-family: var(--font-mono);
-                font-size: 12px;
-            }
-            #editable {
-                width: 100%;
-            }
             .outer {
                 border: 1px solid var(--border-1);
                 border-radius: var(--radius-large);
@@ -310,9 +409,58 @@ class LinkPreviewElement extends HTMLElement {
                 transition: all 0.15s ease;
                 background: var(--bg-1);
                 cursor: pointer;
+                outline: none;
             }
-            .link-preview {
+            .outer:focus {
+                border-color: var(--fg-accent);
+                box-shadow: 0 0 0 2px var(--bg-accent);
+            }
+            .input-dialog {
                 display: flex;
+                flex-direction: column;
+                gap: 12px;
+                padding: 20px;
+                background: var(--bg-1);
+            }
+            .url-input {
+                padding: 12px 16px;
+                border: 1px solid var(--border-1);
+                border-radius: var(--radius);
+                background: var(--bg-2);
+                color: var(--fg-1);
+                font-size: 14px;
+                font-family: var(--font);
+                outline: none;
+                transition: border-color 0.15s ease;
+            }
+            .url-input:focus {
+                border-color: var(--fg-accent);
+            }
+            .url-input::placeholder {
+                color: var(--fg-3);
+            }
+            .submit-btn {
+                padding: 12px 16px;
+                border: none;
+                border-radius: var(--radius);
+                background: var(--bg-accent);
+                color: var(--fg-accent);
+                font-size: 14px;
+                font-weight: 600;
+                font-family: var(--font);
+                cursor: pointer;
+                transition: opacity 0.15s ease;
+            }
+            .submit-btn:hover {
+                opacity: 0.9;
+            }
+            .helper-text {
+                font-size: 13px;
+                color: var(--fg-2);
+                text-align: center;
+            }
+            .preview-content {
+                display: none;
                 flex-direction: column;
             }
             .preview-header {
@@ -360,43 +508,17 @@ class LinkPreviewElement extends HTMLElement {
                 color: var(--fg-3);
                 margin-bottom: 8px;
             }
-            .table-controls {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                padding: 0;
-                font-size: 12px;
-            }
-            .url-display {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                flex: 1;
-                min-width: 0;
-                padding: 6px 8px;
-                background: var(--bg-1);
-                border-radius: var(--radius);
-            }
-            .open {
-                padding: 6px 12px;
-                background-color: transparent;
-                color: var(--fg-accent);
-                border: none;
-                border-radius: var(--radius);
-                outline: none;
-                cursor: pointer;
-                font-size: 12px;
-                transition: all 0.15s ease;
-                font-weight: 500;
-            }
-            .open:hover {
-                background-color: var(--bg-3);
-            }
             </style>
         `;
+
         const content = `
             <div class="outer">
-                <div class="link-preview">
+                <div class="input-dialog">
+                    <input type="text" class="url-input" placeholder="Paste in https://...">
+                    <button class="submit-btn">Create bookmark</button>
+                    <div class="helper-text">Create a visual bookmark from a link.</div>
+                </div>
+                <div class="preview-content">
                     <div class="preview-header">
                         <div class="preview-title-row">
                             <img class="link-preview-image" src="" alt="">
@@ -404,33 +526,12 @@ class LinkPreviewElement extends HTMLElement {
                         </div>
                         <div class="link-preview-description"></div>
                         <div class="link-preview-meta"></div>
-                        <!-- <div class="table-controls">
-                            <div class="url-display">
-                                <span class="link" style="color: var(--fg-3);">🔗</span>
-                                <div class="link" id="editable" contenteditable="${!wisk.editor.readonly}" spellcheck="false" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.link}</div>
-                            </div>
-                            <button class="open">Open</button>
-                        </div> -->
                     </div>
                 </div>
             </div>
         `;
+
         this.shadowRoot.innerHTML = style + content;
-    }
-
-    bindEvents() {
-        const eventType = this.isVirtualKeyboard ? 'input' : 'keyup';
-        this.editable.addEventListener(eventType, this.onValueUpdated.bind(this));
-        this.editable.addEventListener('focus', () => {
-            if (this.editable.innerText.trim() === '') {
-                this.editable.classList.add('empty');
-            }
-        });
-
-        this.shadowRoot.querySelector('.open').addEventListener('click', () => {
-            const url = this.link;
-            window.open('https://' + url, '_blank');
-        });
     }
 }
 

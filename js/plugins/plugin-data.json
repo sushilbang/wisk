@@ -654,7 +654,7 @@
                     "category": "component",
                     "component": "link-preview-element",
                     "nav": false,
-                    "textual": false,
+                    "textual": true,
                     "loadAsModule": false,
                     "width": "mini"
                 }

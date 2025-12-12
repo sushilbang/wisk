@@ -321,7 +321,6 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
 
     // Create events for element creation (only if not remote)
     if (!isRemote) {
-        // Event 1: Element creation
         wisk.sync.newChange({
             path: 'data.elements',
             value: {
@@ -330,8 +329,6 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
                 agent: wisk.sync.agent
             }
         });
-
-        // Event 2: Element order (to preserve position)
         wisk.sync.newChange({
             path: 'data.elementOrder',
             value: {
@@ -340,10 +337,12 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
                 agent: wisk.sync.agent
             }
         });
-
-        // Save immediately (critical event)
         setTimeout(async () => {
-            await wisk.sync.saveModification();
+            try {
+                await wisk.sync.saveModification();
+            } catch (error) {
+                console.error('Failed to save block creation:', error);
+            }
         }, 0);
     }
 
@@ -601,19 +600,13 @@ const smartReorderElements = allElements => {
 
     const editorElement = document.getElementById('editor');
     if (!editorElement) return;
-
-    // Get currently focused element if any
     const activeElement = document.activeElement;
     const focusedId = activeElement?.id;
-
-    // Create a map of current positions
     const currentPositions = new Map();
     Array.from(editorElement.children).forEach((element, index) => {
         const id = element.id?.replace('div-', '');
         if (id) currentPositions.set(id, index);
     });
-
-    // Calculate which elements need to move
     const elementsToMove = [];
     allElements.forEach((id, newIndex) => {
         const currentIndex = currentPositions.get(id);
@@ -621,8 +614,6 @@ const smartReorderElements = allElements => {
             elementsToMove.push({ id, newIndex, currentIndex });
         }
     });
-
-    // Move only the elements that are out of position
     elementsToMove.forEach(({ id, newIndex }) => {
         const element = document.getElementById(`div-${id}`);
         if (!element) return;
@@ -634,16 +625,12 @@ const smartReorderElements = allElements => {
             editorElement.appendChild(element);
         }
     });
-
-    // Restore focus if needed
     if (focusedId) {
         const elementToFocus = document.getElementById(focusedId);
         if (elementToFocus) {
             elementToFocus.focus();
         }
     }
-
-    // Update the elements array order to match
     wisk.editor.document.data.elements.sort((a, b) => allElements.indexOf(a.id) - allElements.indexOf(b.id));
 };
 
@@ -654,44 +641,31 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
         return;
     }
 
-    // Find the element to move
     const elementIndex = wisk.editor.document.data.elements.findIndex(e => e.id === elementId);
     if (elementIndex === -1) return;
 
     const elementToMove = wisk.editor.document.data.elements[elementIndex];
 
-    // Find the target position
     let targetIndex;
     if (afterElementId === '' || afterElementId === null) {
-        // Move to beginning
         targetIndex = 0;
     } else {
         const afterIndex = wisk.editor.document.data.elements.findIndex(e => e.id === afterElementId);
         if (afterIndex === -1) return;
         targetIndex = afterIndex + 1;
     }
-
-    // Remove element from current position
     wisk.editor.document.data.elements.splice(elementIndex, 1);
-
-    // Adjust target index if needed (element was removed from before target)
     if (elementIndex < targetIndex) {
         targetIndex--;
     }
-
-    // Insert element at new position
     wisk.editor.document.data.elements.splice(targetIndex, 0, elementToMove);
-
-    // Update DOM order
     const elementDiv = document.getElementById(`div-${elementId}`);
     if (!elementDiv) return;
 
     const editorElement = document.getElementById('editor');
     if (targetIndex === 0) {
-        // Move to beginning
         editorElement.insertBefore(elementDiv, editorElement.firstChild);
     } else {
-        // Move after the target element
         const afterElementDiv = document.getElementById(`div-${afterElementId}`);
         if (afterElementDiv && afterElementDiv.nextSibling) {
             editorElement.insertBefore(elementDiv, afterElementDiv.nextSibling);
@@ -700,7 +674,6 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
         }
     }
 
-    // Create event for element order change
     const timestamp = Date.now();
     wisk.sync.newChange({
         path: 'data.elementOrder',
@@ -710,10 +683,12 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
             agent: wisk.sync.agent
         }
     });
-
-    // Save immediately (critical event)
     setTimeout(async () => {
-        await wisk.sync.saveModification();
+        try {
+            await wisk.sync.saveModification();
+        } catch (error) {
+            console.error('Failed to save block move:', error);
+        }
     }, 0);
 
     window.dispatchEvent(
@@ -730,8 +705,6 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
 wisk.editor.refreshEditor = function () {
     const editorElement = document.getElementById('editor');
     if (!editorElement) return;
-
-    // Store current focus information
     const activeElement = document.activeElement;
     const focusedId = activeElement?.id;
     let focusOffset = 0;
@@ -744,11 +717,9 @@ wisk.editor.refreshEditor = function () {
         }
     }
 
-    // Clear all current block elements from DOM
     const blockElements = editorElement.querySelectorAll('.rndr');
     blockElements.forEach(element => element.remove());
 
-    // Recreate all elements from data array
     for (let i = 0; i < wisk.editor.document.data.elements.length; i++) {
         const element = wisk.editor.document.data.elements[i];
 
@@ -761,8 +732,6 @@ wisk.editor.refreshEditor = function () {
         editorElement.appendChild(container);
 
         window.dispatchEvent(new CustomEvent('block-created', { detail: { id: element.id } }));
-
-        // Set element value
         setTimeout(() => {
             const domElement = document.getElementById(element.id);
             if (domElement) {
@@ -771,7 +740,6 @@ wisk.editor.refreshEditor = function () {
         }, 0);
     }
 
-    // Restore focus if possible
     if (focusedId) {
         setTimeout(() => {
             const elementToFocus = document.getElementById(focusedId);
@@ -1157,8 +1125,6 @@ wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
     window.dispatchEvent(new CustomEvent('block-changed', {
         detail: { id: elementId }
     }));
-
-    // Save immediately (critical event)
     if (rec === undefined) {
         await wisk.sync.saveModification();
     }
@@ -2267,6 +2233,25 @@ function sanitizeHtmlForClipboard(html) {
         // Clean the href if it exists
         if (href) {
             href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&');
+
+            // Sanitize protocol - only allow safe protocols
+            const safeProtocols = ['http:', 'https:', 'mailto:', 'tel:'];
+            try {
+                // Handle relative URLs and absolute URLs
+                const url = new URL(href, window.location.origin);
+                if (!safeProtocols.includes(url.protocol)) {
+                    // Dangerous protocol (javascript:, data:, vbscript:, etc.) - remove href
+                    href = null;
+                }
+            } catch {
+                // If URL parsing fails, check for dangerous protocols manually
+                const lowerHref = href.toLowerCase().trim();
+                if (lowerHref.startsWith('javascript:') ||
+                    lowerHref.startsWith('data:') ||
+                    lowerHref.startsWith('vbscript:')) {
+                    href = null;
+                }
+            }
         }
 
         // Remove ALL attributes
@@ -2558,7 +2543,7 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
         detail: { id: elementId }
     }));
 
-    // debounce: creating events when typing stops. (what if the user closes the tab before debounce triggers???)
+    // debounce: creating events when typing stops. (what if the user closes the tab before debounce triggers???) -> flush pending updates using `unload`
 
     clearTimeout(debounceTimer);
 
