@@ -130,7 +130,7 @@ wisk.sync.saveUpdates = saveUpdates;
 
 wisk.sync.newChange = function(event) {
     // validate event structure
-    if(!event.path || !event.value || !event.value.data === undefined) {
+    if (!event || !event.path || !event.value || event.value.data === undefined) {
         console.error('invalid event: ', event);
         return;
     }
@@ -280,13 +280,19 @@ async function saveModification() {
     wisk.editor.document.data.sync.syncLogs.push(...wisk.sync.eventLog);
 
     // Save to IndexedDB (materialized document + event logs)
-    await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
+    try {
+        await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
 
-    console.log('Saved document with', wisk.sync.eventLog.length, 'events');
-    console.log('Total events in syncLogs:', wisk.editor.document.data.sync.syncLogs.length);
+        console.log('Saved document with', wisk.sync.eventLog.length, 'events');
+        console.log('Total events in syncLogs:', wisk.editor.document.data.sync.syncLogs.length);
 
-    // Clear the event log after successful save
-    wisk.sync.eventLog = [];
+        // Clear the event log only after successful save
+        wisk.sync.eventLog = [];
+    } catch (error) {
+        console.error('Failed to save document, preserving eventLog:', error);
+        // Remove events from syncLogs since save failed (they're still in eventLog)
+        wisk.editor.document.data.sync.syncLogs.splice(-wisk.sync.eventLog.length);
+    }
 }
 
 wisk.sync.saveModification = saveModification;

@@ -1148,11 +1148,12 @@ class BaseTextElement extends HTMLElement {
                     this.selectedPasteLinkIndex = Math.max(0, this.selectedPasteLinkIndex - 1);
                     this.updatePasteLinkMenuSelection();
                     return;
-                case 'Enter':
+                case 'Enter': {
                     event.preventDefault();
                     const types = ['url', 'bookmark', 'embed'];
                     this.handlePasteLinkChoice(types[this.selectedPasteLinkIndex]);
                     return;
+                }
                 case 'Escape':
                     event.preventDefault();
                     this.hidePasteLinkMenu();

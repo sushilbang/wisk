@@ -1,4 +1,7 @@
 class LinkElement extends HTMLElement {
+    // Static registry to track all instances (including those in shadow DOMs)
+    static instances = new Set();
+
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -16,6 +19,9 @@ class LinkElement extends HTMLElement {
         //     isInternal: this.isInternal
         // });
 
+        // Register this instance in the static registry
+        LinkElement.instances.add(this);
+
         this.render();
         this.bindEvents();
 
@@ -27,6 +33,9 @@ class LinkElement extends HTMLElement {
 
     disconnectedCallback() {
         // console.log('[LinkElement] disconnectedCallback');
+
+        // Remove this instance from the static registry
+        LinkElement.instances.delete(this);
     }
 
     attributeChangedCallback(name, oldVal, newVal) {
@@ -127,13 +136,11 @@ class LinkElement extends HTMLElement {
         }
     }
 
-    // Static method to refresh all internal links on page
+    // Static method to refresh all internal links on page (uses registry to find instances in shadow DOMs)
     static refreshAllInternalLinks() {
-        const allLinks = document.querySelectorAll('link-element');
-        
-        allLinks.forEach((link, index) => {
+        LinkElement.instances.forEach((link) => {
             if (link.isInternal) {
-                // console.log(`[LinkElement] Refreshing link ${index + 1}:`, link.url);
+                // console.log(`[LinkElement] Refreshing link:`, link.url);
                 link.fetchInternalPageTitle();
             }
         });
@@ -430,7 +437,7 @@ class LinkElement extends HTMLElement {
                     <div class="link-wrapper">
                         <svg class="link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 7 0 0 0 7.07 7.07l1.71-1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                         </svg>
                         <span class="url">${displayUrl}</span>
                         <button class="open-btn">Open ↗</button>

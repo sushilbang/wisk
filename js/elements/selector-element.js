@@ -108,7 +108,7 @@ class SelectorElement extends HTMLElement {
             });
 
             // Create link-element block in parent page pointing to new page
-            wisk.editor.changeBlockType(this.elementId, {
+            await wisk.editor.changeBlockType(this.elementId, {
                 url: newPageUrl,
                 title: 'Untitled',
                 display: 'block'

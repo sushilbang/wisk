@@ -963,7 +963,7 @@ wisk.editor.htmlToMarkdown = function (html) {
                 return `__${result}__`;
             case 'code':
                 return `\`${result}\``;
-            case 'sup':
+            case 'sup': {
                 // Check if it contains a reference number link
                 const supRefLink = node.querySelector('a.reference-number');
                 if (supRefLink) {
@@ -971,6 +971,7 @@ wisk.editor.htmlToMarkdown = function (html) {
                     return `[ref_${refNum}]`;
                 }
                 return result;
+            }
             case 'span':
                 const refSpan = node.querySelector('.reference-number');
                 if (refSpan) {
