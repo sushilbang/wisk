@@ -248,6 +248,12 @@ wisk.editor.setPublicStatus = async function (isPublic) {
 };
 
 wisk.editor.setDatabaseProp = async function (key, value) {
+    // Sanitize key to prevent path injection
+    if (typeof key !== 'string' || !key || /[.\[\]]/.test(key)) {
+        console.error('Invalid key for setDatabaseProp:', key);
+        return;
+    }
+
     const timestamp = Date.now();
 
     // Initialize databaseProps if it doesn't exist
@@ -268,6 +274,12 @@ wisk.editor.setDatabaseProp = async function (key, value) {
 };
 
 wisk.editor.savePluginData = async function (identifier, data) {
+    // Sanitize identifier to prevent path injection
+    if (typeof identifier !== 'string' || !identifier || /[.\[\]]/.test(identifier)) {
+        console.error('Invalid identifier for savePluginData:', identifier);
+        return;
+    }
+
     const timestamp = Date.now();
     // create event
     wisk.sync.newChange({
@@ -337,13 +349,7 @@ wisk.editor.createBlockBase = function (elementId, blockType, value, remoteId, i
                 agent: wisk.sync.agent
             }
         });
-        setTimeout(async () => {
-            try {
-                await wisk.sync.saveModification();
-            } catch (error) {
-                console.error('Failed to save block creation:', error);
-            }
-        }, 0);
+        wisk.sync.enqueueSave('block-creation');
     }
 
     // TODO quick fix? idk if this is the best way to do it
@@ -683,13 +689,7 @@ wisk.editor.moveBlock = function (elementId, afterElementId) {
             agent: wisk.sync.agent
         }
     });
-    setTimeout(async () => {
-        try {
-            await wisk.sync.saveModification();
-        } catch (error) {
-            console.error('Failed to save block move:', error);
-        }
-    }, 0);
+    wisk.sync.enqueueSave('block-move');
 
     window.dispatchEvent(
         new CustomEvent('block-moved', {

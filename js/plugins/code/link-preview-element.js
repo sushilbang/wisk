@@ -25,36 +25,27 @@ class LinkPreviewElement extends HTMLElement {
     }
 
     bindEvents() {
+        this._removeAllListeners();
+
         if (!this.outer) return;
 
         this.outer.setAttribute('tabindex', '0');
-
-        if (this.handleClick) {
-            this.outer.removeEventListener('click', this.handleClick);
-        }
-        if (this.boundHandleKeyDown) {
-            this.outer.removeEventListener('keydown', this.boundHandleKeyDown);
-        }
-
-        this.handleClick = (event) => {
+        this._onOuterClick = (event) => {
             if (this.link && !event.target.closest('.input-dialog')) {
                 let url = this.link;
                 if (!url.startsWith('http://') && !url.startsWith('https://')) {
                     url = 'https://' + url;
                 }
-                window.open(url, '_blank');
+                window.open(url, '_blank', 'noopener,noreferrer');
             }
         };
 
-        this.boundHandleKeyDown = (event) => {
+        this._onOuterKeyDown = (event) => {
             if (!this.link) return;
             this.handleKeyDown(event);
         };
 
-        this.outer.addEventListener('click', this.handleClick);
-        this.outer.addEventListener('keydown', this.boundHandleKeyDown);
-
-        this.urlInput.addEventListener('keydown', (event) => {
+        this._onUrlInputKeyDown = (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 this.submitUrl();
@@ -78,22 +69,42 @@ class LinkPreviewElement extends HTMLElement {
                     }
                 }
             }
-        });
+        };
 
-        this.submitBtn.addEventListener('click', () => {
+        this._onSubmitBtnClick = () => {
             this.submitUrl();
-        });
+        };
+        this.outer.addEventListener('click', this._onOuterClick);
+        this.outer.addEventListener('keydown', this._onOuterKeyDown);
+
+        if (this.urlInput) {
+            this.urlInput.addEventListener('keydown', this._onUrlInputKeyDown);
+        }
+
+        if (this.submitBtn) {
+            this.submitBtn.addEventListener('click', this._onSubmitBtnClick);
+        }
+    }
+
+    _removeAllListeners() {
+        if (this.outer) {
+            if (this._onOuterClick) {
+                this.outer.removeEventListener('click', this._onOuterClick);
+            }
+            if (this._onOuterKeyDown) {
+                this.outer.removeEventListener('keydown', this._onOuterKeyDown);
+            }
+        }
+        if (this.urlInput && this._onUrlInputKeyDown) {
+            this.urlInput.removeEventListener('keydown', this._onUrlInputKeyDown);
+        }
+        if (this.submitBtn && this._onSubmitBtnClick) {
+            this.submitBtn.removeEventListener('click', this._onSubmitBtnClick);
+        }
     }
 
     disconnectedCallback() {
-        if (this.outer) {
-            if (this.handleClick) {
-                this.outer.removeEventListener('click', this.handleClick);
-            }
-            if (this.boundHandleKeyDown) {
-                this.outer.removeEventListener('keydown', this.boundHandleKeyDown);
-            }
-        }
+        this._removeAllListeners();
     }
 
     submitUrl() {

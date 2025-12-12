@@ -17,15 +17,16 @@ class EmbedElement extends HTMLElement {
   }
 
   bindEvents() {
-    // Container keyboard events (when embed is showing)
-    this.container.setAttribute('tabindex', '0');
-    this.container.addEventListener('keydown', (event) => {
-      if (!this.link) return; // Only handle when showing embed
-      this.handleKeyDown(event);
-    });
+    this._removeAllListeners();
 
-    // Input field events
-    this.urlInput.addEventListener('keydown', (event) => {
+    if (!this.container) return;
+
+    this.container.setAttribute('tabindex', '0');
+    this._onContainerKeyDown = (event) => {
+      if (!this.link) return;
+      this.handleKeyDown(event);
+    };
+    this._onUrlInputKeyDown = (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         this.submitUrl();
@@ -49,12 +50,36 @@ class EmbedElement extends HTMLElement {
           }
         }
       }
-    });
+    };
 
-    // Submit button click
-    this.submitBtn.addEventListener('click', () => {
+    this._onSubmitBtnClick = () => {
       this.submitUrl();
-    });
+    };
+    this.container.addEventListener('keydown', this._onContainerKeyDown);
+
+    if (this.urlInput) {
+      this.urlInput.addEventListener('keydown', this._onUrlInputKeyDown);
+    }
+
+    if (this.submitBtn) {
+      this.submitBtn.addEventListener('click', this._onSubmitBtnClick);
+    }
+  }
+
+  _removeAllListeners() {
+    if (this.container && this._onContainerKeyDown) {
+      this.container.removeEventListener('keydown', this._onContainerKeyDown);
+    }
+    if (this.urlInput && this._onUrlInputKeyDown) {
+      this.urlInput.removeEventListener('keydown', this._onUrlInputKeyDown);
+    }
+    if (this.submitBtn && this._onSubmitBtnClick) {
+      this.submitBtn.removeEventListener('click', this._onSubmitBtnClick);
+    }
+  }
+
+  disconnectedCallback() {
+    this._removeAllListeners();
   }
 
   submitUrl() {

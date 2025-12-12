@@ -5,6 +5,29 @@ let firstMsg = true;
 // events
 wisk.sync.eventLog = [];
 
+// Centralized save queue to prevent overlapping saves
+let saveQueue = Promise.resolve();
+let saveScheduled = false;
+
+wisk.sync.enqueueSave = function(context = 'unknown') {
+    if (saveScheduled) {
+        // A save is already scheduled, it will pick up any pending events
+        return saveQueue;
+    }
+    saveScheduled = true;
+
+    saveQueue = saveQueue.then(async () => {
+        saveScheduled = false;
+        try {
+            await wisk.sync.saveModification();
+        } catch (error) {
+            console.error(`Failed to save (${context}):`, error);
+        }
+    });
+
+    return saveQueue;
+};
+
 async function sync() {
     wisk.utils.showLoading('Syncing with server...');
     console.log('PAGE', wisk.editor.pageId);
@@ -250,10 +273,11 @@ async function saveModification() {
     }
 
     // Store event count before modifications for accurate rollback
-    const eventCount = wisk.sync.eventLog.length;
-
+    const eventsToSave = wisk.sync.eventLog.slice();
+    wisk.sync.eventLog = [];
+    const eventCount = eventsToSave.length;
     // Apply all pending events to the in-memory document
-    wisk.sync.eventLog.forEach(event => {
+    eventsToSave.forEach(event => {
         applyEvent(wisk.editor.document, event);
     });
     if (!wisk.editor.document.data.sync) {
@@ -266,18 +290,17 @@ async function saveModification() {
     if (!wisk.editor.document.data.sync.syncLogs) {
         wisk.editor.document.data.sync.syncLogs = [];
     }
-    wisk.editor.document.data.sync.syncLogs.push(...wisk.sync.eventLog);
+    wisk.editor.document.data.sync.syncLogs.push(...eventsToSave);
     try {
         await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
 
         console.log('Saved document with', eventCount, 'events');
-        console.log('Total events in syncLogs:', wisk.editor.document.data.sync.syncLogs.length);
-        wisk.sync.eventLog = [];
     } catch (error) {
         console.error('Failed to save document, preserving eventLog:', error);
         if (wisk.editor.document.data.sync.syncLogs.length >= eventCount) {
             wisk.editor.document.data.sync.syncLogs.splice(-eventCount);
         }
+        wisk.sync.eventLog = eventsToSave.concat(wisk.sync.eventLog);
         throw error;
     }
 }
