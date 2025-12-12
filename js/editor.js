@@ -2719,7 +2719,7 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
 
         // Clear the set
         elementUpdatesNeeded.clear();
-    }, 1000);
+    }, 300);
 };
 
 function initKeyboardDetection() {
