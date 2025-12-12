@@ -8,6 +8,48 @@ class EmbedElement extends HTMLElement {
 
   connectedCallback() {
     this.iframe = this.shadowRoot.querySelector('iframe');
+    this.container = this.shadowRoot.querySelector('.embed-container');
+    this.bindEvents();
+    this.updateIframeSource();
+  }
+
+  bindEvents() {
+    // Make container focusable for keyboard events
+    this.container.setAttribute('tabindex', '0');
+
+    this.container.addEventListener('keydown', (event) => {
+      this.handleKeyDown(event);
+    });
+  }
+
+  handleKeyDown(event) {
+    switch (event.key) {
+      case 'Backspace':
+      case 'Delete':
+        event.preventDefault();
+        wisk.editor.deleteBlock(this.id);
+        break;
+      case 'Enter':
+        event.preventDefault();
+        wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        event.preventDefault();
+        const prevElement = wisk.editor.prevElement(this.id);
+        if (prevElement) {
+          wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+        }
+        break;
+      case 'ArrowDown':
+      case 'ArrowRight':
+        event.preventDefault();
+        const nextElement = wisk.editor.nextElement(this.id);
+        if (nextElement) {
+          wisk.editor.focusBlock(nextElement.id, { x: 0 });
+        }
+        break;
+    }
   }
 
   extractSrcFromIframe(iframeCode) {
@@ -125,7 +167,10 @@ class EmbedElement extends HTMLElement {
   }
 
   focus(identifier) {
-    // Embed element is display-only, no editable element to focus
+    // Focus the container for keyboard events
+    if (this.container) {
+      this.container.focus();
+    }
   }
 
   render() {
@@ -151,6 +196,12 @@ class EmbedElement extends HTMLElement {
           border-radius: var(--radius-large);
           overflow: hidden;
           transition: all 0.15s ease;
+          outline: none;
+        }
+
+        .embed-container:focus {
+          border-color: var(--fg-accent);
+          box-shadow: 0 0 0 2px var(--bg-accent);
         }
 
         iframe {

@@ -1,5 +1,4 @@
 class LinkElement extends HTMLElement {
-    // Static registry to track all instances (including those in shadow DOMs)
     static instances = new Set();
 
     constructor() {
@@ -12,34 +11,24 @@ class LinkElement extends HTMLElement {
     }
 
     connectedCallback() {
-        // console.log('[LinkElement] connectedCallback', {
-        //     url: this.url,
-        //     title: this.title,
-        //     display: this.displayMode,
-        //     isInternal: this.isInternal
-        // });
-
-        // Register this instance in the static registry
         LinkElement.instances.add(this);
-
         this.render();
         this.bindEvents();
-
         if (this.isInternal) {
-            // console.log('[LinkElement] Scheduling title fetch for internal link');
             setTimeout(() => this.fetchInternalPageTitle(), 100);
         }
     }
 
     disconnectedCallback() {
-        // console.log('[LinkElement] disconnectedCallback');
+        if (this._titleUpdateTimer) {
+            clearTimeout(this._titleUpdateTimer);
+            this._titleUpdateTimer = null;
+        }
 
-        // Remove this instance from the static registry
         LinkElement.instances.delete(this);
     }
 
     attributeChangedCallback(name, oldVal, newVal) {
-        // console.log('[LinkElement] attributeChangedCallback', { name, oldVal, newVal });
         
         if (oldVal !== newVal && this.isConnected) {
             this.render();
@@ -86,26 +75,17 @@ class LinkElement extends HTMLElement {
         try {
             const urlObj = new URL(this.url);
             const pageId = urlObj.searchParams.get('id');
-            
-            // console.log('[LinkElement] Fetching page ID:', pageId);
-            
             if (!pageId) {
                 return;
             }
-
-            // Fetch from wisk.db (IndexedDB)
             const pageData = await wisk.db.getPage(pageId);
-            
 
             if (!pageData || !pageData.data || !pageData.data.config) {
                 return;
             }
 
-            // Get title from config.name
             const pageTitle = pageData.data.config.name || 'Untitled';
-            
-            // Get emoji from first element if available, otherwise default to page.svg
-            let pageIcon = '/js/plugins/icons/page.svg'; // DEFAULT
+            let pageIcon = '/js/plugins/icons/page.svg';
             
             if (pageData.data.elements && 
                 pageData.data.elements.length > 0 && 
@@ -114,8 +94,6 @@ class LinkElement extends HTMLElement {
                 pageIcon = pageData.data.elements[0].value.emoji;
             }
 
-
-            // Only update if changed to avoid unnecessary re-renders
             if (this.title !== pageTitle) {
                 this.setAttribute('title', pageTitle);
             }
@@ -124,23 +102,18 @@ class LinkElement extends HTMLElement {
                 this.setAttribute('icon', pageIcon);
             }
             
-            // Update parent document
             if (this.id && typeof wisk.editor.justUpdates === 'function') {
                 wisk.editor.justUpdates(this.id);
             }
-
-            // console.log('[LinkElement] ✓ Title fetch complete');
 
         } catch (error) {
             console.error('[LinkElement] ✗ Error fetching page title:', error);
         }
     }
 
-    // Static method to refresh all internal links on page (uses registry to find instances in shadow DOMs)
     static refreshAllInternalLinks() {
         LinkElement.instances.forEach((link) => {
             if (link.isInternal) {
-                // console.log(`[LinkElement] Refreshing link:`, link.url);
                 link.fetchInternalPageTitle();
             }
         });
@@ -152,7 +125,6 @@ class LinkElement extends HTMLElement {
             display: this.displayMode
         };
 
-        // Store title for all links (not just internal)
         if (this.title) {
             value.title = this.title;
         }
@@ -160,28 +132,22 @@ class LinkElement extends HTMLElement {
         if (this.isInternal && this.icon) {
             value.icon = this.icon;
         }
-
-        // console.log('[LinkElement] getValue:', value);
         return value;
     }
 
     setValue(path, value) {
-        // console.log('[LinkElement] setValue:', { path, value });
 
         if (value.url) this.setAttribute('url', value.url);
         if (value.title) this.setAttribute('title', value.title);
         if (value.icon) this.setAttribute('icon', value.icon);
         if (value.display) this.setAttribute('display', value.display);
 
-        // ALWAYS fetch latest title for internal links
         if (this.isInternal) {
-            // console.log('[LinkElement] setValue: scheduling title fetch for internal link');
             setTimeout(() => this.fetchInternalPageTitle(), 100);
         }
     }
 
     getTextContent() {
-        // Use title for display when available, fallback to URL
         const displayText = this.title || this.url;
         return {
             html: displayText,
@@ -196,7 +162,6 @@ class LinkElement extends HTMLElement {
             editable.focus();
             if (identifier && typeof identifier.x === 'number') {
                 try {
-                    // Try shadowRoot.getSelection() first (Chrome), fall back to window.getSelection() (Firefox, Safari)
                     const sel = this.shadowRoot.getSelection?.() || window.getSelection() || document.getSelection();
 
                     if (!sel) {
@@ -217,6 +182,11 @@ class LinkElement extends HTMLElement {
                     console.warn('[LinkElement] Failed to set cursor position:', error);
                 }
             }
+        } else {
+            const wrapper = this.shadowRoot.querySelector('.link-wrapper');
+            if (wrapper) {
+                wrapper.focus();
+            }
         }
     }
 
@@ -227,6 +197,13 @@ class LinkElement extends HTMLElement {
                 if (e.target.closest('[contenteditable="true"]')) return;
                 this.openLink();
             };
+
+            if (this.displayMode === 'block' && !this.isInternal) {
+                wrapper.setAttribute('tabindex', '0');
+                wrapper.onkeydown = (e) => {
+                    this.handleBlockKeyDown(e);
+                };
+            }
         }
 
         const openBtn = this.shadowRoot.querySelector('.open-btn');
@@ -248,20 +225,82 @@ class LinkElement extends HTMLElement {
                     e.preventDefault();
                     wisk.editor.deleteBlock(this.id);
                 }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                    const sel = this.shadowRoot.getSelection?.() || window.getSelection();
+                    if (sel && sel.rangeCount > 0) {
+                        const range = sel.getRangeAt(0);
+                        if (range.collapsed && range.startOffset === 0) {
+                            e.preventDefault();
+                            const prevElement = wisk.editor.prevElement(this.id);
+                            if (prevElement) {
+                                wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+                            }
+                        }
+                    }
+                }
+                if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                    const sel = this.shadowRoot.getSelection?.() || window.getSelection();
+                    if (sel && sel.rangeCount > 0) {
+                        const range = sel.getRangeAt(0);
+                        if (range.collapsed && range.startOffset === editable.innerText.length) {
+                            e.preventDefault();
+                            const nextElement = wisk.editor.nextElement(this.id);
+                            if (nextElement) {
+                                wisk.editor.focusBlock(nextElement.id, { x: 0 });
+                            }
+                        }
+                    }
+                }
             };
 
             editable.oninput = () => {
                 const newTitle = editable.innerText;
-                // console.log('[LinkElement] Title manually edited to:', newTitle);
                 this.setAttribute('title', newTitle);
-                
-                // Update the linked page's title if internal
+
                 if (this.isInternal) {
-                    this.updateLinkedPageTitle(newTitle);
+                    if (this._titleUpdateTimer) {
+                        clearTimeout(this._titleUpdateTimer);
+                    }
+                    this._titleUpdateTimer = setTimeout(() => {
+                        if (this._lastSavedTitle !== newTitle) {
+                            this._lastSavedTitle = newTitle;
+                            this.updateLinkedPageTitle(newTitle);
+                        }
+                    }, 400);
                 }
-                
+
                 wisk.editor.justUpdates(this.id);
             };
+        }
+    }
+
+    handleBlockKeyDown(event) {
+        switch (event.key) {
+            case 'Backspace':
+            case 'Delete':
+                event.preventDefault();
+                wisk.editor.deleteBlock(this.id);
+                break;
+            case 'Enter':
+                event.preventDefault();
+                wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });
+                break;
+            case 'ArrowUp':
+            case 'ArrowLeft':
+                event.preventDefault();
+                const prevElement = wisk.editor.prevElement(this.id);
+                if (prevElement) {
+                    wisk.editor.focusBlock(prevElement.id, { x: prevElement.value?.textContent?.length || 0 });
+                }
+                break;
+            case 'ArrowDown':
+            case 'ArrowRight':
+                event.preventDefault();
+                const nextElement = wisk.editor.nextElement(this.id);
+                if (nextElement) {
+                    wisk.editor.focusBlock(nextElement.id, { x: 0 });
+                }
+                break;
         }
     }
 
@@ -306,27 +345,9 @@ class LinkElement extends HTMLElement {
     }
 
     render() {
-        // console.log('[LinkElement] render:', {
-        //     displayMode: this.displayMode,
-        //     isInternal: this.isInternal,
-        //     title: this.title,
-        //     icon: this.icon
-        // });
-
         const isBlock = this.displayMode === 'block';
-
         if (isBlock) {
             if (this.isInternal) {
-                // Emoji or icon handling
-                let iconHtml;
-                const iconValue = this.icon || '/js/plugins/icons/page.svg'; // DEFAULT
-                
-                if (iconValue && !iconValue.endsWith('.svg') && !iconValue.startsWith('/')) {
-                    iconHtml = `<span class="emoji">${iconValue}</span>`;
-                } else {
-                    iconHtml = `<img src="${iconValue}" alt="">`;
-                }
-
                 const displayTitle = this.escapeHtml(this.title || 'Untitled');
 
                 this.shadowRoot.innerHTML = `
@@ -351,9 +372,9 @@ class LinkElement extends HTMLElement {
                             align-items: center;
                             justify-content: center;
                         }
-                        .icon img { 
-                            width: 100%; 
-                            height: 100%; 
+                        .icon img {
+                            width: 100%;
+                            height: 100%;
                             object-fit: contain;
                             filter: var(--themed-svg);
                         }
@@ -383,13 +404,31 @@ class LinkElement extends HTMLElement {
                         .open-btn:hover { background: var(--bg-accent); color: var(--fg-accent); } */
                     </style>
                     <div class="link-wrapper">
-                        <div class="icon">${iconHtml}</div>
+                        <div class="icon"></div>
                         <div class="title">${displayTitle}</div>
                         <!-- <button class="open-btn">Open</button> -->
                     </div>
                 `;
+                const iconContainer = this.shadowRoot.querySelector('.icon');
+                const iconValue = this.icon || '/js/plugins/icons/page.svg';
+                const isEmoji = iconValue && !iconValue.endsWith('.svg') && !iconValue.startsWith('/') && !iconValue.startsWith('http');
+
+                if (isEmoji) {
+                    const emojiSpan = document.createElement('span');
+                    emojiSpan.className = 'emoji';
+                    emojiSpan.textContent = iconValue;
+                    iconContainer.appendChild(emojiSpan);
+                } else {
+                    const img = document.createElement('img');
+                    if (iconValue.startsWith('/') || iconValue.startsWith('http://localhost') || iconValue.startsWith('https://')) {
+                        img.src = iconValue;
+                    } else {
+                        img.src = '/js/plugins/icons/page.svg';
+                    }
+                    img.alt = '';
+                    iconContainer.appendChild(img);
+                }
             } else {
-                // External link rendering
                 const displayUrl = this.escapeHtml(this.url);
 
                 this.shadowRoot.innerHTML = `
@@ -404,9 +443,14 @@ class LinkElement extends HTMLElement {
                             border: 1px solid var(--border-1);
                             border-radius: var(--radius);
                             cursor: pointer;
-                            transition: background 0.15s;
+                            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+                            outline: none;
                         }
                         .link-wrapper:hover { background: var(--bg-2); }
+                        .link-wrapper:focus {
+                            border-color: var(--fg-accent);
+                            box-shadow: 0 0 0 2px var(--bg-accent);
+                        }
                         .link-icon {
                             width: 16px;
                             height: 16px;
@@ -445,7 +489,6 @@ class LinkElement extends HTMLElement {
                 `;
             }
         } else {
-            // Inline link rendering - use title when available, fallback to URL
             const displayText = this.escapeHtml(this.title || this.url);
 
             this.shadowRoot.innerHTML = `
