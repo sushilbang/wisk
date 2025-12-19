@@ -655,34 +655,42 @@ wisk.editor.htmlToMarkdown = function (html) {
         }
 
         switch (node.nodeName.toLowerCase()) {
-            case 'cite-element':
+            case 'cite-element': {
                 const referenceId = node.getAttribute('reference-id');
                 return `--citation-element--${referenceId}--`;
-            case 'a':
+            }
+            case 'a': {
                 if (node.classList?.contains('reference-number')) {
                     const refNum = result.replace(/[\[\]]/g, '');
                     return `[ref_${refNum}]`;
                 }
                 return `[${result}](${node.href})`;
+            }
             case 'b':
-            case 'strong':
+            case 'strong': {
                 return `**${result}**`;
+            }
             case 'i':
-            case 'em':
+            case 'em': {
                 return `*${result}*`;
-            case 'strike':
+            }
+            case 'strike': {
                 return `~~${result}~~`;
-            case 'u':
+            }
+            case 'u': {
                 return `__${result}__`;
-            case 'span':
+            }
+            case 'span': {
                 const refSpan = node.querySelector('.reference-number');
                 if (refSpan) {
                     const refNum = refSpan.textContent.replace(/[\[\]]/g, '');
                     return result.replace(refSpan.outerHTML, `[ref_${refNum}]`);
                 }
                 return result;
-            default:
+            }
+            default: {
                 return result;
+            }
         }
     }
 
