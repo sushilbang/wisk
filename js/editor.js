@@ -1840,29 +1840,15 @@ function handleSelectionKeyboard(event) {
 
 // Handle paste event to intercept our custom clipboard format
 function handlePasteEvent(event) {
-    const clipboardData = event.clipboardData;
-    if (!clipboardData) return;
+    const elements = WiskPasteHandler.handleWiskClipboardPaste(event);
 
-    // Check if HTML contains our custom format
-    const html = clipboardData.getData('text/html');
-    if (html) {
-        const match = html.match(/__WISK_CLIPBOARD__(.+?)__WISK_CLIPBOARD_END__/);
-        if (match) {
-            // Prevent default paste behavior
-            event.preventDefault();
-            event.stopPropagation();
+    if(elements) {
+        event.preventDefault();
+        event.stopPropagation();
 
-            try {
-                const wiskData = JSON.parse(match[1]);
-                if (wiskData.__wisk_elements__ && wiskData.elements) {
-                    // Restore our internal clipboard
-                    elementClipboard = wiskData.elements;
-                    pasteElements();
-                }
-            } catch (err) {
-                console.error('Failed to parse wisk clipboard data:', err);
-            }
-        }
+        // restore our internal clipboard and paste
+        elementClipboard = elements;
+        pasteElements();
     }
 }
 
