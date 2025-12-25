@@ -1675,6 +1675,37 @@ function onDragStart(event, elementId) {
     window.addEventListener('mouseup', handleDrop);
     window.addEventListener('touchmove', handleDrag, { passive: false });
     window.addEventListener('touchend', handleDrop);
+    window.addEventListener('blur', cleanupDrag);
+    window.addEventListener('keydown', handleDragKeydown);
+}
+
+function handleDragKeydown(e) {
+    if (e.key === 'Escape') {
+        cleanupDrag();
+    }
+}
+
+function cleanupDrag() {
+    if (!dragState) return;
+
+    if (autoScroll) {
+        clearInterval(autoScroll);
+        autoScroll = null;
+    }
+    hideDropIndicator();
+
+    if (dragState.clone && dragState.clone.parentNode) {
+        document.body.removeChild(dragState.clone);
+    }
+
+    window.removeEventListener('mousemove', handleDrag);
+    window.removeEventListener('mouseup', handleDrop);
+    window.removeEventListener('touchmove', handleDrag);
+    window.removeEventListener('touchend', handleDrop);
+    window.removeEventListener('blur', cleanupDrag);
+    window.removeEventListener('keydown', handleDragKeydown);
+
+    dragState = null;
 }
 
 function handleDrag(e) {
@@ -1692,7 +1723,7 @@ function handleDrag(e) {
     } else {
         hideDropIndicator();
     }
-    handleScroll(e.clientY);
+    handleScroll(event.clientY);
 }
 
 function handleScroll(y) {
@@ -1735,21 +1766,8 @@ function handleScroll(y) {
 
 function handleDrop(e) {
     if (!dragState) return;
-    // Clear auto-scroll when dropping
-    if (autoScroll) {
-        clearInterval(autoScroll);
-        autoScroll = null;
-    }
-    hideDropIndicator();
-    const { elementId, original, clone, originalValue, originalComponent } = dragState;
 
-    document.body.removeChild(clone);
-
-    window.removeEventListener('mousemove', handleDrag);
-    window.removeEventListener('mouseup', handleDrop);
-    window.removeEventListener('touchmove', handleDrop);
-    window.removeEventListener('touchend', handleDrop);
-
+    const { elementId, originalValue, originalComponent } = dragState;
     const event = e.changedTouches ? e.changedTouches[0] : e;
 
     // get the above element of the clone and put the clone below it after which delete the original
@@ -1766,7 +1784,7 @@ function handleDrop(e) {
         }
     }
 
-    dragState = null;
+    cleanupDrag();
 }
 
 // Rectangle Selection Functions
