@@ -622,63 +622,71 @@ class BaseTextElement extends HTMLElement {
 
         var newType = 'uwu';
         switch (this.editable.innerText.trim()) {
-            case '#':
+            case '#': {
                 newType = 'heading1-element';
                 break;
-            case '##':
+            }
+            case '##': {
                 newType = 'heading2-element';
                 break;
-            case '###':
+            }
+            case '###': {
                 newType = 'heading3-element';
                 break;
-            case '####':
+            }
+            case '####': {
                 newType = 'heading4-element';
                 break;
-            case '#####':
+            }
+            case '#####': {
                 newType = 'heading5-element';
                 break;
+            }
             case '-':
-                newType = 'list-element';
-                break;
             case '+':
+            case '*': {
                 newType = 'list-element';
                 break;
-            case '*':
-                newType = 'list-element';
-                break;
-            case '1.':
-                newType = 'numbered-list-element';
-                break;
-            case '1)':
-                newType = 'numbered-list-element';
-                break;
-            case '>':
+            }
+            case '>': {
                 newType = 'quote-element';
                 break;
-            case '```':
+            }
+            case '```': {
                 newType = 'code-element';
                 break;
+            }
             case '---':
-                newType = 'divider-element';
-                break;
             case '***':
+            case '___': {
                 newType = 'divider-element';
                 break;
-            case '___':
-                newType = 'divider-element';
-                break;
+            }
             case '- [ ]':
+            case '- [x]': {
                 newType = 'checkbox-element';
                 break;
-            case '- [x]':
-                newType = 'checkbox-element';
-                break;
+            }
+        }
+
+        // Check for numbered list pattern (e.g., "1.", "2.", "10.", "1)", "2)")
+        if (newType === 'uwu') {
+            const numberedMatch = this.editable.innerText.trim().match(/^(\d+)[.)]$/);
+            if (numberedMatch) {
+                newType = 'numbered-list-element';
+            }
         }
 
         if (newType != 'uwu') {
             var val = { textContent: '' };
             if (this.editable.innerText.trim() === '- [x]') {
                 val.checked = true;
+            }
+
+            // Extract the number for numbered lists
+            const numberedMatch = this.editable.innerText.trim().match(/^(\d+)[.)]$/);
+            if (numberedMatch && newType === 'numbered-list-element') {
+                val.number = parseInt(numberedMatch[1], 10);
             }
 
             wisk.editor.changeBlockType(this.id, val, newType);
@@ -1767,6 +1775,252 @@ class BaseTextElement extends HTMLElement {
         }
     }
 
+    parseMarkdownText(text) {
+        const lines = text.split(/\r?\n/);
+        const elements = [];
+        let i = 0;
+        const convertInlineMarkdown = (text) => {
+            let result = text;
+            // Escape HTML entities first (but preserve existing HTML tags we want to keep)
+            result = result.replace(/&/g, '&amp;');
+            // Don't escape < and > for HTML tags we want to preserve
+            result = result.replace(/<(?!(b|i|u|strike|code|a|br|span|strong|em)\b)/g, '&lt;');
+            result = result.replace(/(?<!\b(b|i|u|strike|code|a|br|span|strong|em))>/g, '&gt;');
+            // Bold and italic combined (***text*** or ___text___)
+            result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
+            result = result.replace(/___(.+?)___/g, '<b><i>$1</i></b>');
+            // Bold (**text** or __text__)
+            result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+            result = result.replace(/__(.+?)__/g, '<b>$1</b>');
+            // Italic (*text* or _text_) - be careful not to match inside words
+            result = result.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+            result = result.replace(/(?<![a-zA-Z])_([^_]+)_(?![a-zA-Z])/g, '<i>$1</i>');
+            // Strikethrough (~~text~~)
+            result = result.replace(/~~(.+?)~~/g, '<strike>$1</strike>');
+            // Inline code (`code`) - process before other patterns
+            result = result.replace(/`([^`]+)`/g, '<code style="background: var(--bg-2); padding: 2px 4px; border-radius: 3px; font-family: var(--font-mono);">$1</code>');
+            // Links [text](url)
+            result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" contenteditable="false">$1</a>');
+            // Images ![alt](url) - convert to text representation
+            result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[Image: $1]');
+            return result;
+        };
+        const isTableRow = (line) => {
+            const trimmed = line.trim();
+            return trimmed.startsWith('|') && trimmed.endsWith('|');
+        };
+        const isTableSeparator = (line) => {
+            const trimmed = line.trim();
+            return /^\|[\s\-:|]+\|$/.test(trimmed);
+        };
+        const parseTableRow = (line) => {
+            return line.trim()
+                .slice(1, -1)
+                .split('|')
+                .map(cell => cell.trim());
+        };
+
+        while (i < lines.length) {
+            const line = lines[i];
+            const trimmedLine = line.trim();
+            if (!trimmedLine) {
+                i++;
+                continue;
+            }
+            if (trimmedLine.startsWith('<details') || trimmedLine.startsWith('</details') ||
+                trimmedLine.startsWith('<summary') || trimmedLine.startsWith('</summary')) {
+                i++;
+                continue;
+            }
+            if (trimmedLine.startsWith('```')) {
+                const language = trimmedLine.slice(3).trim() || 'plaintext';
+                const codeLines = [];
+                i++;
+                while (i < lines.length && !lines[i].trim().startsWith('```')) {
+                    codeLines.push(lines[i]);
+                    i++;
+                }
+                i++;
+                elements.push({
+                    elementName: 'code-element',
+                    value: {
+                        textContent: codeLines.join('\n'),
+                        language: language
+                    }
+                });
+                continue;
+            }
+            if (isTableRow(trimmedLine)) {
+                const tableRows = [];
+                let headers = [];
+                let hasHeaders = false;
+                headers = parseTableRow(lines[i]);
+                i++;
+                if (i < lines.length && isTableSeparator(lines[i])) {
+                    hasHeaders = true;
+                    i++;
+                }
+                while (i < lines.length && isTableRow(lines[i].trim())) {
+                    tableRows.push(parseTableRow(lines[i]));
+                    i++;
+                }
+                if (hasHeaders) {
+                    elements.push({
+                        elementName: 'table-element',
+                        value: {
+                            tableContent: {
+                                headers: headers,
+                                rows: tableRows.length > 0 ? tableRows : [['']]
+                            }
+                        }
+                    });
+                } else {
+                    const allRows = [headers, ...tableRows];
+                    elements.push({
+                        elementName: 'table-element',
+                        value: {
+                            tableContent: {
+                                headers: allRows[0].map((_, idx) => `Column ${idx + 1}`),
+                                rows: allRows
+                            }
+                        }
+                    });
+                }
+                continue;
+            }
+            if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim()) && trimmedLine) {
+                elements.push({
+                    elementName: 'heading1-element',
+                    value: { textContent: convertInlineMarkdown(trimmedLine) }
+                });
+                i += 2;
+                continue;
+            }
+            if (i + 1 < lines.length && /^-+$/.test(lines[i + 1].trim()) && trimmedLine && !trimmedLine.startsWith('-')) {
+                elements.push({
+                    elementName: 'heading2-element',
+                    value: { textContent: convertInlineMarkdown(trimmedLine) }
+                });
+                i += 2;
+                continue;
+            }
+            const headingMatch = trimmedLine.match(/^(#{1,5})\s+(.+)$/);
+            if (headingMatch) {
+                const level = headingMatch[1].length;
+                elements.push({
+                    elementName: `heading${level}-element`,
+                    value: { textContent: convertInlineMarkdown(headingMatch[2]) }
+                });
+                i++;
+                continue;
+            }
+            if (/^([-*_])\1{2,}$/.test(trimmedLine)) {
+                elements.push({
+                    elementName: 'divider-element',
+                    value: { textContent: '' }
+                });
+                i++;
+                continue;
+            }
+            const checkboxMatch = trimmedLine.match(/^[-*+]\s+\[([ xX])\]\s*(.*)$/);
+            if (checkboxMatch) {
+                const indent = (line.length - line.trimStart().length) / 2;
+                elements.push({
+                    elementName: 'checkbox-element',
+                    value: {
+                        textContent: convertInlineMarkdown(checkboxMatch[2]),
+                        checked: checkboxMatch[1].toLowerCase() === 'x',
+                        indent: Math.floor(indent)
+                    }
+                });
+                i++;
+                continue;
+            }
+            const unorderedMatch = trimmedLine.match(/^[-*+]\s+(.+)$/);
+            if (unorderedMatch) {
+                const indent = (line.length - line.trimStart().length) / 2;
+                elements.push({
+                    elementName: 'list-element',
+                    value: {
+                        textContent: convertInlineMarkdown(unorderedMatch[1]),
+                        indent: Math.floor(indent)
+                    }
+                });
+                i++;
+                continue;
+            }
+            const orderedMatch = trimmedLine.match(/^(\d+)[.)]\s+(.+)$/);
+            if (orderedMatch) {
+                const indent = (line.length - line.trimStart().length) / 2;
+                elements.push({
+                    elementName: 'numbered-list-element',
+                    value: {
+                        textContent: convertInlineMarkdown(orderedMatch[2]),
+                        number: parseInt(orderedMatch[1], 10),
+                        indent: Math.floor(indent)
+                    }
+                });
+                i++;
+                continue;
+            }
+            const quoteMatch = trimmedLine.match(/^>+\s*(.*)$/);
+            if (quoteMatch) {
+                const quoteContent = quoteMatch[1];
+                elements.push({
+                    elementName: 'quote-element',
+                    value: { textContent: convertInlineMarkdown(quoteContent) }
+                });
+                i++;
+                continue;
+            }
+            if (trimmedLine.startsWith('<') && (
+                trimmedLine.includes('<summary>') ||
+                trimmedLine.includes('</summary>') ||
+                trimmedLine.includes('<img') ||
+                trimmedLine.includes('<br')
+            )) {
+                i++;
+                continue;
+            }
+            elements.push({
+                elementName: 'text-element',
+                value: { textContent: convertInlineMarkdown(trimmedLine) }
+            });
+            i++;
+        }
+
+        return elements;
+    }
+
+    isMarkdownText(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        if (lines.length === 0) return false;
+
+        let markdownPatterns = 0;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            // Headings
+            if (/^#{1,5}\s+.+$/.test(trimmed)) markdownPatterns++;
+            // Lists
+            else if (/^[-*+]\s+.+$/.test(trimmed)) markdownPatterns++;
+            // Ordered lists
+            else if (/^\d+[.)]\s+.+$/.test(trimmed)) markdownPatterns++;
+            // Checkboxes
+            else if (/^[-*+]\s+\[[ xX]\]\s*.+$/.test(trimmed)) markdownPatterns++;
+            // Code blocks
+            else if (/^```/.test(trimmed)) markdownPatterns++;
+            // Block quotes
+            else if (/^>\s*.+$/.test(trimmed)) markdownPatterns++;
+            // Horizontal rules
+            else if (/^([-*_])\1{2,}$/.test(trimmed)) markdownPatterns++;
+            // Table rows
+            else if (/^\|.+\|$/.test(trimmed)) markdownPatterns++;
+            // Table separator
+            else if (/^\|[\s\-:|]+\|$/.test(trimmed)) markdownPatterns++;
+        }
+        return markdownPatterns > 0;
+    }
+
     handlePaste(event) {
         const clipboardData = event.clipboardData || window.clipboardData;
         const plainText = clipboardData.getData('text/plain') || clipboardData.getData('text');
@@ -2088,36 +2342,41 @@ class BaseTextElement extends HTMLElement {
                 let skipChildren = false;
 
                 switch (node.tagName.toLowerCase()) {
-                    case 'h1':
+                    case 'h1': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'heading1-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
-                    case 'h2':
+                    }
+                    case 'h2': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'heading2-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
-                    case 'h3':
+                    }
+                    case 'h3': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'heading3-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
-                    case 'h4':
+                    }
+                    case 'h4': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'heading4-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
-                    case 'h5':
+                    }
+                    case 'h5': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'heading5-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
+                    }
                     case 'ul':
                     case 'ol': {
                         if (!node._processed) {
@@ -2228,11 +2487,12 @@ class BaseTextElement extends HTMLElement {
                         };
                         skipChildren = true;
                         break;
-                    case 'hr':
+                    case 'hr': {
                         element = { elementName: 'divider-element', value: '' };
                         skipChildren = true;
                         break;
-                    case 'img':
+                    }
+                    case 'img': {
                         if (node.src) {
                             element = {
                                 elementName: 'image-element',
@@ -2241,12 +2501,14 @@ class BaseTextElement extends HTMLElement {
                         }
                         skipChildren = true;
                         break;
-                    case 'p':
+                    }
+                    case 'p': {
                         if (node.textContent.trim()) {
                             element = { elementName: 'text-element', value: convertLinksToElements(node.innerHTML.trim()) };
                         }
                         skipChildren = true;
                         break;
+                    }
                     case 'table': {
                         const { headers, rows } = parseTableNode(node);
                         if (headers.length > 0 || rows.length > 0) {
@@ -2370,10 +2632,38 @@ class BaseTextElement extends HTMLElement {
 
             return flattenedElements;
         } else {
+            // No HTML data - check if it's plain text that looks like markdown
             const text = clipboardData.getData('text') || clipboardData.getData('text/plain');
             if (text) {
                 event.preventDefault();
-                console.log('Pasting plain text:', text);
+
+                // Check if text looks like markdown
+                if (this.isMarkdownText(text)) {
+                    console.log('Detected markdown text, parsing...');
+                    const parsedElements = this.parseMarkdownText(text);
+
+                    if (parsedElements.length > 0) {
+                        var inx = 0;
+                        var lastId = this.id;
+
+                        // Only append to current block if it's a text-element AND current block is not empty
+                        if (parsedElements[0].elementName === 'text-element' &&
+                            parsedElements[0].value.textContent &&
+                            parsedElements[0].value.textContent.trim() !== '' &&
+                            this.editable.innerText.trim() !== '') {
+                            wisk.editor.updateBlock(this.id, 'value.append', parsedElements[0].value);
+                            inx = 1;
+                        }
+
+                        for (var i = inx; i < parsedElements.length; i++) {
+                            lastId = wisk.editor.createBlockNoFocus(lastId, parsedElements[i].elementName, parsedElements[i].value);
+                        }
+
+                        return parsedElements;
+                    }
+                }
+
+                // Not markdown or parsing failed - insert as plain text
                 const cleanedText = text.replace(/[\r\n]+/g, ' ').trim();
                 console.log('Cleaned text:', cleanedText);
                 document.execCommand('insertText', false, cleanedText);
