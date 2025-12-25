@@ -1381,8 +1381,8 @@ class BaseTextElement extends HTMLElement {
         if (this.getFocus() === 0) {
             event.preventDefault();
             const prevElement = wisk.editor.prevElement(this.id);
-            const prevDomElement = wisk.editor.getElement(prevElement.id);
             if (!prevElement) return;
+            const prevDomElement = wisk.editor.getElement(prevElement.id);
 
             const prevComponentDetail = wisk.plugins.getPluginDetail(prevElement.component);
             if (prevComponentDetail.textual) {
