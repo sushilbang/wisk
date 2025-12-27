@@ -119,14 +119,23 @@ class TextElement extends BaseTextElement {
                 padding: 4px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 z-index: 1000;
-                display: none;
                 min-width: 120px;
+                opacity: 0;
+                transform: translateY(-8px) scale(0.95);
+                pointer-events: none;
+                transition: opacity 0.15s ease, transform 0.15s ease;
+            }
+            .paste-link-menu.visible {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                pointer-events: auto;
             }
             .paste-link-option {
                 padding: 8px 12px;
                 cursor: pointer;
                 border-radius: var(--radius);
                 font-size: 14px;
+                transition: background 0.1s ease;
             }
             .paste-link-option:hover,
             .paste-link-option.selected {

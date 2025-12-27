@@ -2220,6 +2220,19 @@ function deleteSelectedElements() {
     if (selectedElements.size === 0) return;
 
     const elementsToDelete = Array.from(selectedElements);
+
+    let elementToFocus = null;
+    const firstDeletedId = elementsToDelete[0];
+    const prevElement = wisk.editor.prevElement(firstDeletedId);
+    const lastDeletedId = elementsToDelete[elementsToDelete.length - 1];
+    const nextElement = wisk.editor.nextElement(lastDeletedId);
+
+    if (prevElement && !elementsToDelete.includes(prevElement.id)) {
+        elementToFocus = prevElement;
+    } else if (nextElement && !elementsToDelete.includes(nextElement.id)) {
+        elementToFocus = nextElement;
+    }
+
     elementsToDelete.forEach(elementId => {
         if (elementId !== 'abcdxyz') {
             // Don't delete the main element
@@ -2228,6 +2241,15 @@ function deleteSelectedElements() {
     });
 
     clearSelection();
+
+    if (elementToFocus) {
+        const componentDetail = wisk.plugins.getPluginDetail(elementToFocus.component);
+        if (componentDetail && componentDetail.textual) {
+            wisk.editor.focusBlock(elementToFocus.id, { x: elementToFocus.value?.textContent?.length || 0 });
+        } else {
+            wisk.editor.focusBlock(elementToFocus.id, {});
+        }
+    }
 }
 
 // Sanitize HTML to remove problematic link attributes that break JSON

@@ -32,7 +32,14 @@ class EmbedElement extends HTMLElement {
         this.submitUrl();
       } else if (event.key === 'Backspace' && this.urlInput.value === '') {
         event.preventDefault();
+        const prevElement = wisk.editor.prevElement(this.id);
+        const nextElement = wisk.editor.nextElement(this.id);
         wisk.editor.deleteBlock(this.id);
+        const elementToFocus = prevElement || nextElement;
+        if (elementToFocus) {
+          const focusPos = prevElement ? (prevElement.value?.textContent?.length || 0) : 0;
+          wisk.editor.focusBlock(elementToFocus.id, { x: focusPos });
+        }
       } else if (event.key === 'ArrowUp' || (event.key === 'ArrowLeft' && this.urlInput.selectionStart === 0)) {
         if (this.urlInput.selectionStart === 0) {
           event.preventDefault();
@@ -94,10 +101,18 @@ class EmbedElement extends HTMLElement {
   handleKeyDown(event) {
     switch (event.key) {
       case 'Backspace':
-      case 'Delete':
+      case 'Delete': {
         event.preventDefault();
+        const prevElement = wisk.editor.prevElement(this.id);
+        const nextElement = wisk.editor.nextElement(this.id);
         wisk.editor.deleteBlock(this.id);
+        const elementToFocus = prevElement || nextElement;
+        if (elementToFocus) {
+          const focusPos = prevElement ? (prevElement.value?.textContent?.length || 0) : 0;
+          wisk.editor.focusBlock(elementToFocus.id, { x: focusPos });
+        }
         break;
+      }
       case 'Enter':
         event.preventDefault();
         wisk.editor.createNewBlock(this.id, 'text-element', { textContent: '' }, { x: 0 });

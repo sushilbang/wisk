@@ -1017,7 +1017,9 @@ class BaseTextElement extends HTMLElement {
 
             this.pasteLinkMenu.style.left = left + 'px';
             this.pasteLinkMenu.style.top = top + 'px';
-            this.pasteLinkMenu.style.display = 'block';
+            requestAnimationFrame(() => {
+                this.pasteLinkMenu.classList.add('visible');
+            });
             this.updatePasteLinkMenuSelection();
 
             this.pasteLinkMenu.querySelectorAll('.paste-link-option').forEach(opt => {
@@ -1043,7 +1045,7 @@ class BaseTextElement extends HTMLElement {
 
     hidePasteLinkMenu() {
         if (!this.pasteLinkMenu) return;
-        this.pasteLinkMenu.style.display = 'none';
+        this.pasteLinkMenu.classList.remove('visible');
         this.showingPasteLinkMenu = false;
         this.pendingPasteUrl = null;
         this._pendingLinkElement = null;

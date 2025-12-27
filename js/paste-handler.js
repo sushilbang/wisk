@@ -415,7 +415,7 @@ class WiskPasteHandler {
                 if (node.src) {
                     element = {
                         elementName: 'image-element',
-                        value: node.src,
+                        value: { imageUrl: node.src, textContent: '' },
                     };
                 }
                 skipChildren = true;
@@ -907,6 +907,30 @@ class WiskPasteHandler {
 
     static handleTextElementPaste(event, elementId, options = {}) {
         const clipboardData = event.clipboardData || window.clipboardData;
+
+        if (clipboardData.items) {
+            for (const item of clipboardData.items) {
+                if (item.type.startsWith('image/')) {
+                    event.preventDefault();
+                    const file = item.getAsFile();
+                    if (file) {
+                        const extension = file.type.split('/')[1] || 'png';
+                        const uniqueUrl = 'image-' + Date.now() + '.' + extension;
+                        wisk.db.setAsset(uniqueUrl, file).then(() => {
+                            wisk.editor.createNewBlock(elementId, 'image-element', {
+                                imageUrl: uniqueUrl,
+                                textContent: '',
+                            }, { x: 0 });
+                        }).catch(err => {
+                            console.error('[Paste] Failed to store image:', err);
+                        });
+
+                        return { handled: true, elements: [], isImage: true };
+                    }
+                }
+            }
+        }
+
         const htmlData = clipboardData.getData('text/html');
         const plainText = clipboardData.getData('text') || clipboardData.getData('text/plain');
         if (WiskPasteHandler.isWiskClipboardFormat(htmlData)) {
@@ -926,7 +950,6 @@ class WiskPasteHandler {
                 }
                 return { handled: true, elements: [] };
             }
-            // If there's only a single text element, insert it inline instead of creating a new block
             if (flattenedElements.length === 1 && flattenedElements[0].elementName === 'text-element') {
                 const textContent = flattenedElements[0].value.textContent || '';
                 if (textContent.trim()) {
@@ -954,8 +977,6 @@ class WiskPasteHandler {
         }
         if (plainText) {
             event.preventDefault();
-
-            // Check if text looks like markdown
             if (WiskPasteHandler.isMarkdownText(plainText)) {
                 const parsedElements = WiskPasteHandler.parseMarkdownText(plainText);
 
