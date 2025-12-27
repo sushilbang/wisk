@@ -21,14 +21,14 @@ class NumberedListElement extends BaseTextElement {
         const styles = [
             // Level 0: 1, 2, 3...
             n => n,
-            // Level 1: i, ii, iii...
-            n => this.toRoman(n).toLowerCase(),
-            // Level 2: a, b, c...
+            // Level 1: a, b, c...
             n => String.fromCharCode(96 + n),
+            // Level 2: i, ii, iii...
+            n => this.toRoman(n).toLowerCase(),
             // Level 3: 1, 2, 3... (repeat)
             n => n,
-            // Level 4: i, ii, iii... (repeat)
-            n => this.toRoman(n).toLowerCase(),
+            // Level 4: a, b, c... (repeat)
+            n => String.fromCharCode(96 + n),
         ];
 
         return styles[level % styles.length](num);
@@ -111,6 +111,7 @@ class NumberedListElement extends BaseTextElement {
         } else if (event.inputType === 'insertText' && event.data === ' ' && this.getFocus() === 0) {
             event.preventDefault();
             this.indent++;
+            this.number = 1;
             this.updateIndent();
             this.sendUpdates();
         }
@@ -187,6 +188,7 @@ class NumberedListElement extends BaseTextElement {
         event.preventDefault();
         if (this.getFocus() === 0) {
             this.indent++;
+            this.number = 1;
             this.updateIndent();
             this.sendUpdates();
         } else {
@@ -208,12 +210,12 @@ class NumberedListElement extends BaseTextElement {
             }
             #number {
                 position: absolute;
-                top: 0;
+                top: 50%;
+                transform: translateY(-50%);
                 color: var(--fg-1);
                 font-size: 14px;
                 min-width: 20px;
                 text-align: right;
-                line-height: 1.5;
             }
             #editable {
                 line-height: 1.5;

@@ -46,6 +46,7 @@ class CodeElement extends LitElement {
             border-radius: var(--radius);
             padding: var(--padding-3);
             padding-top: var(--padding-4);
+            padding-bottom: var(--padding-4);
             caret-color: var(--fg-1);
             font-size: 14px;
             line-height: 1.5;

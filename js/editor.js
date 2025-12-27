@@ -1067,7 +1067,6 @@ wisk.editor.updateBlock = function (elementId, path, newValue, rec) {
 
 wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
     if (elementId.includes('-')) {
-        console.log('CHANGE BLOCK TYPE IN IFRAME', elementId, newType);
         eid = elementId.split('-')[0];
         document.getElementById(eid).editor.changeBlockType(elementId, value, newType, rec);
         return;
@@ -1127,6 +1126,10 @@ wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
 
         setTimeout(() => {
             newDomElement.setValue('', value);
+            // Focus the new element after setting value
+            if (typeof newDomElement.focus === 'function') {
+                newDomElement.focus({ x: 0 });
+            }
         }, 0);
     }
 

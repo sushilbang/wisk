@@ -222,7 +222,6 @@ class BaseTextElement extends HTMLElement {
 
     handleAIOperationFallback(newText, selection) {
         try {
-            // Fallback method using execCommand
             document.execCommand('insertText', false, newText);
             this.sendUpdates();
         } catch (fallbackError) {
@@ -452,9 +451,7 @@ class BaseTextElement extends HTMLElement {
 
         this.editable.addEventListener('focus', () => {
             this.isEditableFocused = true;
-            if (this.editable.innerText.trim() === '') {
-                this.editable.classList.add('empty');
-            }
+            this.updatePlaceholder();
         });
 
         this.editable.addEventListener('blur', () => {
@@ -463,6 +460,8 @@ class BaseTextElement extends HTMLElement {
         });
 
         this.editable.addEventListener('paste', this.handlePaste.bind(this));
+
+        this.editable.addEventListener('copy', this.handleCopy.bind(this));
 
         const handleSelectionChange = () => {
             const selection = this.shadowRoot.getSelection();
@@ -541,7 +540,6 @@ class BaseTextElement extends HTMLElement {
                     this.hideEmojiSuggestions();
                 }
             }, 0);
-            this.updatePlaceholder();
         });
 
         this.emojiSuggestionsContainer.addEventListener('mouseenter', () => {
@@ -669,7 +667,6 @@ class BaseTextElement extends HTMLElement {
             }
         }
 
-        // Check for numbered list pattern (e.g., "1.", "2.", "10.", "1)", "2)")
         if (newType === 'uwu') {
             const numberedMatch = this.editable.innerText.trim().match(/^(\d+)[.)]$/);
             if (numberedMatch) {
@@ -683,7 +680,6 @@ class BaseTextElement extends HTMLElement {
                 val.checked = true;
             }
 
-            // Extract the number for numbered lists
             const numberedMatch = this.editable.innerText.trim().match(/^(\d+)[.)]$/);
             if (numberedMatch && newType === 'numbered-list-element') {
                 val.number = parseInt(numberedMatch[1], 10);
@@ -973,32 +969,6 @@ class BaseTextElement extends HTMLElement {
         }
     }
 
-    // ===== PASTE LINK MENU METHODS =====
-
-    isUrl(text) {
-        const trimmed = text.trim();
-        if (trimmed.includes(' ') || trimmed.includes('\n')) return false;
-        try {
-            new URL(trimmed.startsWith('http') ? trimmed : 'https://' + trimmed);
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    isInternalUrl(url) {
-        // Internal links are wisk page links - either app.wisk.cc or same origin with ?id= param
-        if (!url) return false;
-        if (url.startsWith('https://app.wisk.cc')) return true;
-        try {
-            const urlObj = new URL(url);
-            const currentOrigin = window.location.origin;
-            // Only internal if same origin AND has ?id= parameter
-            if (urlObj.origin === currentOrigin && urlObj.searchParams.has('id')) return true;
-        } catch {}
-        return false;
-    }
-
     stripProtocol(url) {
         return url.replace(/^https?:\/\//, '');
     }
@@ -1009,47 +979,66 @@ class BaseTextElement extends HTMLElement {
         this.pendingPasteUrl = url;
         this.showingPasteLinkMenu = true;
         this.selectedPasteLinkIndex = 0;
-
-        // Position near cursor
+        const normalizedUrl = this.normalizeUrl(url);
+        const linkElement = document.createElement('link-element');
+        linkElement.setAttribute('url', normalizedUrl);
+        linkElement.setAttribute('display', 'inline');
+        linkElement.setAttribute('contenteditable', 'false');
+        this._pendingLinkElement = linkElement;
         const selection = this.shadowRoot.getSelection();
-        let left = 0, top = 24;
+        let range;
 
         if (selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            const rect = range.getBoundingClientRect();
-            const editableRect = this.editable.getBoundingClientRect();
-            if (rect.width > 0 || rect.height > 0) {
-                left = rect.left - editableRect.left;
-                top = rect.bottom - editableRect.top + 4;
-            }
+            range = selection.getRangeAt(0);
+        } else {
+            range = document.createRange();
+            range.selectNodeContents(this.editable);
+            range.collapse(false);
         }
 
-        this.pasteLinkMenu.style.left = left + 'px';
-        this.pasteLinkMenu.style.top = top + 'px';
-        this.pasteLinkMenu.style.display = 'block';
-        this.updatePasteLinkMenuSelection();
+        range.insertNode(linkElement);
+        this.editable.classList.remove('empty');
+        const spaceNode = document.createTextNode(' ');
+        range.setStartAfter(linkElement);
+        range.insertNode(spaceNode);
+        range.setStartAfter(spaceNode);
+        range.setEndAfter(spaceNode);
+        selection.removeAllRanges();
+        selection.addRange(range);
 
-        // Add click handlers
-        this.pasteLinkMenu.querySelectorAll('.paste-link-option').forEach(opt => {
-            opt.onclick = (e) => {
-                e.preventDefault();
-                this.handlePasteLinkChoice(opt.dataset.type);
-            };
+        requestAnimationFrame(() => {
+            this.updatePlaceholder();
+            this.sendUpdates();
+            const linkRect = linkElement.getBoundingClientRect();
+            const editableRect = this.editable.getBoundingClientRect();
+
+            let left = linkRect.left - editableRect.left;
+            let top = linkRect.bottom - editableRect.top + 4;
+
+            this.pasteLinkMenu.style.left = left + 'px';
+            this.pasteLinkMenu.style.top = top + 'px';
+            this.pasteLinkMenu.style.display = 'block';
+            this.updatePasteLinkMenuSelection();
+
+            this.pasteLinkMenu.querySelectorAll('.paste-link-option').forEach(opt => {
+                opt.onclick = (e) => {
+                    e.preventDefault();
+                    this.handlePasteLinkChoice(opt.dataset.type);
+                };
+            });
+
+            setTimeout(() => {
+                this._closePasteMenuHandler = (e) => {
+                    const path = e.composedPath();
+                    const clickedInMenu = path.some(el => el === this.pasteLinkMenu);
+                    const clickedInHost = path.some(el => el === this);
+                    if (!clickedInMenu && !clickedInHost) {
+                        this.hidePasteLinkMenu();
+                    }
+                };
+                document.addEventListener('mousedown', this._closePasteMenuHandler);
+            }, 0);
         });
-
-        // Close on outside click
-        setTimeout(() => {
-            this._closePasteMenuHandler = (e) => {
-                // Check composed path to handle shadow DOM clicks properly
-                const path = e.composedPath();
-                const clickedInMenu = path.some(el => el === this.pasteLinkMenu);
-                const clickedInHost = path.some(el => el === this);
-                if (!clickedInMenu && !clickedInHost) {
-                    this.hidePasteLinkMenu();
-                }
-            };
-            document.addEventListener('mousedown', this._closePasteMenuHandler);
-        }, 0);
     }
 
     hidePasteLinkMenu() {
@@ -1057,6 +1046,7 @@ class BaseTextElement extends HTMLElement {
         this.pasteLinkMenu.style.display = 'none';
         this.showingPasteLinkMenu = false;
         this.pendingPasteUrl = null;
+        this._pendingLinkElement = null;
         if (this._closePasteMenuHandler) {
             document.removeEventListener('mousedown', this._closePasteMenuHandler);
             this._closePasteMenuHandler = null;
@@ -1073,57 +1063,24 @@ class BaseTextElement extends HTMLElement {
 
     handlePasteLinkChoice(type) {
         const url = this.normalizeUrl(this.pendingPasteUrl);
+        const pendingLink = this._pendingLinkElement;
         this.hidePasteLinkMenu();
 
         switch (type) {
             case 'url':
                 {
-                    // Insert inline link-element inside the text-element
-                    const linkElement = document.createElement('link-element');
-                    linkElement.setAttribute('url', url);
-                    linkElement.setAttribute('display', 'inline');
-                    linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
-
-                    // Get current selection/cursor position
-                    const selection = this.shadowRoot.getSelection();
-                    let range;
-
-                    if (selection.rangeCount > 0) {
-                        range = selection.getRangeAt(0);
-                    } else {
-                        // No selection, append at end
-                        range = document.createRange();
-                        range.selectNodeContents(this.editable);
-                        range.collapse(false);
-                    }
-
-                    // Insert link at cursor position
-                    range.insertNode(linkElement);
-
-                    // Add a space after the link
-                    const spaceNode = document.createTextNode(' ');
-                    range.setStartAfter(linkElement);
-                    range.insertNode(spaceNode);
-
-                    // Move cursor after the space
-                    range.setStartAfter(spaceNode);
-                    range.setEndAfter(spaceNode);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-
-                    // Focus the editable
                     this.editable.focus();
-
-                    // Force update placeholder (link-element is a child element)
-                    this.updatePlaceholder();
-
-                    // Send updates
-                    this.sendUpdates();
                     break;
                 }
             case 'bookmark':
                 {
-                    // Convert to link-preview-element
+                    if (pendingLink && pendingLink.parentNode) {
+                        const nextSibling = pendingLink.nextSibling;
+                        if (nextSibling && nextSibling.nodeType === Node.TEXT_NODE && nextSibling.textContent === ' ') {
+                            nextSibling.remove();
+                        }
+                        pendingLink.remove();
+                    }
                     wisk.editor.changeBlockType(this.id, {
                         textContent: this.stripProtocol(url)
                     }, 'link-preview-element');
@@ -1131,7 +1088,13 @@ class BaseTextElement extends HTMLElement {
                 }
             case 'embed':
                 {
-                    // Convert to embed-element
+                    if (pendingLink && pendingLink.parentNode) {
+                        const nextSibling = pendingLink.nextSibling;
+                        if (nextSibling && nextSibling.nodeType === Node.TEXT_NODE && nextSibling.textContent === ' ') {
+                            nextSibling.remove();
+                        }
+                        pendingLink.remove();
+                    }
                     wisk.editor.changeBlockType(this.id, {
                         textContent: this.stripProtocol(url)
                     }, 'embed-element');
@@ -1140,10 +1103,7 @@ class BaseTextElement extends HTMLElement {
         }
     }
 
-    // ===== END PASTE LINK MENU METHODS =====
-
     handleKeyDown(event) {
-        // Handle paste link menu keyboard navigation
         if (this.showingPasteLinkMenu) {
             switch (event.key) {
                 case 'ArrowDown':
@@ -1362,7 +1322,6 @@ class BaseTextElement extends HTMLElement {
 
     handleEnterKey(event) {
         event.preventDefault();
-        console.log('Enter key pressed, suggestion active:', this.suggestionActive);
         if (this.suggestionActive) {
             this.acceptSuggestion();
             return;
@@ -1391,6 +1350,32 @@ class BaseTextElement extends HTMLElement {
     }
 
     handleBackspace(event) {
+        const selection = this.shadowRoot.getSelection();
+        if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            if (range.collapsed) {
+                const container = range.startContainer;
+                const offset = range.startOffset;
+                if (container.nodeType === Node.TEXT_NODE && offset === 0) {
+                    const prevSibling = container.previousSibling;
+                    if (prevSibling && prevSibling.nodeName === 'LINK-ELEMENT') {
+                        event.preventDefault();
+                        prevSibling.remove();
+                        this.sendUpdates();
+                        return;
+                    }
+                }
+                if (container.nodeType === Node.ELEMENT_NODE && offset > 0) {
+                    const prevChild = container.childNodes[offset - 1];
+                    if (prevChild && prevChild.nodeName === 'LINK-ELEMENT') {
+                        event.preventDefault();
+                        prevChild.remove();
+                        this.sendUpdates();
+                        return;
+                    }
+                }
+            }
+        }
         if (this.getFocus() === 0) {
             event.preventDefault();
             const prevElement = wisk.editor.prevElement(this.id);
@@ -1419,6 +1404,7 @@ class BaseTextElement extends HTMLElement {
 
     handleArrowKey(event, direction, targetOffset) {
         const pos = this.getFocus();
+
         if (pos === targetOffset) {
             event.preventDefault();
             const adjacentElement = direction === 'next-up' ? wisk.editor.prevElement(this.id) : wisk.editor.nextElement(this.id);
@@ -1565,12 +1551,11 @@ class BaseTextElement extends HTMLElement {
     }
 
     handleVerticalArrow(event, direction) {
-        console.log('Vertical arrow key pressed', direction);
         const pos = this.getFocus();
+
         setTimeout(() => {
             const newPos = this.getFocus();
             if ((direction === 'next-up' && newPos === 0) || (direction === 'next-down' && newPos === this.editable.innerText.length)) {
-                console.log('Moving to adjacent element');
                 const adjacentElement = direction === 'next-up' ? wisk.editor.prevElement(this.id) : wisk.editor.nextElement(this.id);
 
                 if (adjacentElement) {
@@ -1612,18 +1597,15 @@ class BaseTextElement extends HTMLElement {
 
     updatePlaceholder() {
         if (this.editable) {
-            // Check if truly empty (no text AND no child elements like link-element)
             const hasText = this.editable.innerText.trim() !== '';
-            const hasChildElements = this.editable.children.length > 0;
+            const hasChildElements = this.editable.childElementCount > 0;
             const isEmpty = !hasText && !hasChildElements;
-
             this.editable.classList.toggle('empty', isEmpty);
             this.editable.dataset.placeholder = this.getAttribute('placeholder') || this.placeholder;
         }
     }
 
     sendUpdates() {
-        console.log('Sending updates', this.id);
         setTimeout(() => {
             wisk.editor.justUpdates(this.id);
         }, 0);
@@ -1775,250 +1757,42 @@ class BaseTextElement extends HTMLElement {
         }
     }
 
-    parseMarkdownText(text) {
-        const lines = text.split(/\r?\n/);
-        const elements = [];
-        let i = 0;
-        const convertInlineMarkdown = (text) => {
-            let result = text;
-            // Escape HTML entities first (but preserve existing HTML tags we want to keep)
-            result = result.replace(/&/g, '&amp;');
-            // Don't escape < and > for HTML tags we want to preserve
-            result = result.replace(/<(?!(b|i|u|strike|code|a|br|span|strong|em)\b)/g, '&lt;');
-            result = result.replace(/(?<!\b(b|i|u|strike|code|a|br|span|strong|em))>/g, '&gt;');
-            // Bold and italic combined (***text*** or ___text___)
-            result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
-            result = result.replace(/___(.+?)___/g, '<b><i>$1</i></b>');
-            // Bold (**text** or __text__)
-            result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-            result = result.replace(/__(.+?)__/g, '<b>$1</b>');
-            // Italic (*text* or _text_) - be careful not to match inside words
-            result = result.replace(/\*([^*]+)\*/g, '<i>$1</i>');
-            result = result.replace(/(?<![a-zA-Z])_([^_]+)_(?![a-zA-Z])/g, '<i>$1</i>');
-            // Strikethrough (~~text~~)
-            result = result.replace(/~~(.+?)~~/g, '<strike>$1</strike>');
-            // Inline code (`code`) - process before other patterns
-            result = result.replace(/`([^`]+)`/g, '<code style="background: var(--bg-2); padding: 2px 4px; border-radius: 3px; font-family: var(--font-mono);">$1</code>');
-            // Links [text](url)
-            result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" contenteditable="false">$1</a>');
-            // Images ![alt](url) - convert to text representation
-            result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[Image: $1]');
-            return result;
-        };
-        const isTableRow = (line) => {
-            const trimmed = line.trim();
-            return trimmed.startsWith('|') && trimmed.endsWith('|');
-        };
-        const isTableSeparator = (line) => {
-            const trimmed = line.trim();
-            return /^\|[\s\-:|]+\|$/.test(trimmed);
-        };
-        const parseTableRow = (line) => {
-            return line.trim()
-                .slice(1, -1)
-                .split('|')
-                .map(cell => cell.trim());
-        };
+    handleCopy(event) {
+        const selection = this.shadowRoot.getSelection();
+        if (!selection.rangeCount) return;
 
-        while (i < lines.length) {
-            const line = lines[i];
-            const trimmedLine = line.trim();
-            if (!trimmedLine) {
-                i++;
-                continue;
-            }
-            if (trimmedLine.startsWith('<details') || trimmedLine.startsWith('</details') ||
-                trimmedLine.startsWith('<summary') || trimmedLine.startsWith('</summary')) {
-                i++;
-                continue;
-            }
-            if (trimmedLine.startsWith('```')) {
-                const language = trimmedLine.slice(3).trim() || 'plaintext';
-                const codeLines = [];
-                i++;
-                while (i < lines.length && !lines[i].trim().startsWith('```')) {
-                    codeLines.push(lines[i]);
-                    i++;
-                }
-                i++;
-                elements.push({
-                    elementName: 'code-element',
-                    value: {
-                        textContent: codeLines.join('\n'),
-                        language: language
-                    }
-                });
-                continue;
-            }
-            if (isTableRow(trimmedLine)) {
-                const tableRows = [];
-                let headers = [];
-                let hasHeaders = false;
-                headers = parseTableRow(lines[i]);
-                i++;
-                if (i < lines.length && isTableSeparator(lines[i])) {
-                    hasHeaders = true;
-                    i++;
-                }
-                while (i < lines.length && isTableRow(lines[i].trim())) {
-                    tableRows.push(parseTableRow(lines[i]));
-                    i++;
-                }
-                if (hasHeaders) {
-                    elements.push({
-                        elementName: 'table-element',
-                        value: {
-                            tableContent: {
-                                headers: headers,
-                                rows: tableRows.length > 0 ? tableRows : [['']]
-                            }
-                        }
-                    });
-                } else {
-                    const allRows = [headers, ...tableRows];
-                    elements.push({
-                        elementName: 'table-element',
-                        value: {
-                            tableContent: {
-                                headers: allRows[0].map((_, idx) => `Column ${idx + 1}`),
-                                rows: allRows
-                            }
-                        }
-                    });
-                }
-                continue;
-            }
-            if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim()) && trimmedLine) {
-                elements.push({
-                    elementName: 'heading1-element',
-                    value: { textContent: convertInlineMarkdown(trimmedLine) }
-                });
-                i += 2;
-                continue;
-            }
-            if (i + 1 < lines.length && /^-+$/.test(lines[i + 1].trim()) && trimmedLine && !trimmedLine.startsWith('-')) {
-                elements.push({
-                    elementName: 'heading2-element',
-                    value: { textContent: convertInlineMarkdown(trimmedLine) }
-                });
-                i += 2;
-                continue;
-            }
-            const headingMatch = trimmedLine.match(/^(#{1,5})\s+(.+)$/);
-            if (headingMatch) {
-                const level = headingMatch[1].length;
-                elements.push({
-                    elementName: `heading${level}-element`,
-                    value: { textContent: convertInlineMarkdown(headingMatch[2]) }
-                });
-                i++;
-                continue;
-            }
-            if (/^([-*_])\1{2,}$/.test(trimmedLine)) {
-                elements.push({
-                    elementName: 'divider-element',
-                    value: { textContent: '' }
-                });
-                i++;
-                continue;
-            }
-            const checkboxMatch = trimmedLine.match(/^[-*+]\s+\[([ xX])\]\s*(.*)$/);
-            if (checkboxMatch) {
-                const indent = (line.length - line.trimStart().length) / 2;
-                elements.push({
-                    elementName: 'checkbox-element',
-                    value: {
-                        textContent: convertInlineMarkdown(checkboxMatch[2]),
-                        checked: checkboxMatch[1].toLowerCase() === 'x',
-                        indent: Math.floor(indent)
-                    }
-                });
-                i++;
-                continue;
-            }
-            const unorderedMatch = trimmedLine.match(/^[-*+]\s+(.+)$/);
-            if (unorderedMatch) {
-                const indent = (line.length - line.trimStart().length) / 2;
-                elements.push({
-                    elementName: 'list-element',
-                    value: {
-                        textContent: convertInlineMarkdown(unorderedMatch[1]),
-                        indent: Math.floor(indent)
-                    }
-                });
-                i++;
-                continue;
-            }
-            const orderedMatch = trimmedLine.match(/^(\d+)[.)]\s+(.+)$/);
-            if (orderedMatch) {
-                const indent = (line.length - line.trimStart().length) / 2;
-                elements.push({
-                    elementName: 'numbered-list-element',
-                    value: {
-                        textContent: convertInlineMarkdown(orderedMatch[2]),
-                        number: parseInt(orderedMatch[1], 10),
-                        indent: Math.floor(indent)
-                    }
-                });
-                i++;
-                continue;
-            }
-            const quoteMatch = trimmedLine.match(/^>+\s*(.*)$/);
-            if (quoteMatch) {
-                const quoteContent = quoteMatch[1];
-                elements.push({
-                    elementName: 'quote-element',
-                    value: { textContent: convertInlineMarkdown(quoteContent) }
-                });
-                i++;
-                continue;
-            }
-            if (trimmedLine.startsWith('<') && (
-                trimmedLine.includes('<summary>') ||
-                trimmedLine.includes('</summary>') ||
-                trimmedLine.includes('<img') ||
-                trimmedLine.includes('<br')
-            )) {
-                i++;
-                continue;
-            }
-            elements.push({
-                elementName: 'text-element',
-                value: { textContent: convertInlineMarkdown(trimmedLine) }
-            });
-            i++;
-        }
+        const range = selection.getRangeAt(0);
+        const clonedContent = range.cloneContents();
 
-        return elements;
-    }
+        // Create a temporary container to process the content
+        const tempDiv = document.createElement('div');
+        tempDiv.appendChild(clonedContent);
 
-    isMarkdownText(text) {
-        const lines = text.split(/\r?\n/).filter(line => line.trim());
-        if (lines.length === 0) return false;
+        // Find all link-elements and convert them to serialized format
+        const linkElements = tempDiv.querySelectorAll('link-element');
+        linkElements.forEach(linkEl => {
+            const url = linkEl.getAttribute('url') || '';
+            const title = linkEl.getAttribute('title') || linkEl.textContent || url;
+            const display = linkEl.getAttribute('display') || 'inline';
 
-        let markdownPatterns = 0;
-        for (const line of lines) {
-            const trimmed = line.trim();
-            // Headings
-            if (/^#{1,5}\s+.+$/.test(trimmed)) markdownPatterns++;
-            // Lists
-            else if (/^[-*+]\s+.+$/.test(trimmed)) markdownPatterns++;
-            // Ordered lists
-            else if (/^\d+[.)]\s+.+$/.test(trimmed)) markdownPatterns++;
-            // Checkboxes
-            else if (/^[-*+]\s+\[[ xX]\]\s*.+$/.test(trimmed)) markdownPatterns++;
-            // Code blocks
-            else if (/^```/.test(trimmed)) markdownPatterns++;
-            // Block quotes
-            else if (/^>\s*.+$/.test(trimmed)) markdownPatterns++;
-            // Horizontal rules
-            else if (/^([-*_])\1{2,}$/.test(trimmed)) markdownPatterns++;
-            // Table rows
-            else if (/^\|.+\|$/.test(trimmed)) markdownPatterns++;
-            // Table separator
-            else if (/^\|[\s\-:|]+\|$/.test(trimmed)) markdownPatterns++;
-        }
-        return markdownPatterns > 0;
+            // Create a replacement that preserves link-element format for wisk
+            // and also creates an <a> tag for external paste compatibility
+            const replacement = document.createElement('a');
+            replacement.href = url;
+            replacement.textContent = title;
+            replacement.setAttribute('target', '_blank');
+            replacement.setAttribute('data-wisk-link', 'true');
+            replacement.setAttribute('data-wisk-display', display);
+
+            linkEl.parentNode.replaceChild(replacement, linkEl);
+        });
+
+        const htmlContent = tempDiv.innerHTML;
+        const textContent = tempDiv.textContent;
+
+        event.preventDefault();
+        event.clipboardData.setData('text/html', htmlContent);
+        event.clipboardData.setData('text/plain', textContent);
     }
 
     handlePaste(event) {
@@ -2026,651 +1800,37 @@ class BaseTextElement extends HTMLElement {
         const plainText = clipboardData.getData('text/plain') || clipboardData.getData('text');
         const htmlData = clipboardData.getData('text/html');
 
-        // Check for standalone URL paste (when editable is empty)
-        if (plainText && this.isUrl(plainText.trim())) {
+        if (plainText && WiskPasteHandler.isURL(plainText.trim())) {
             const url = plainText.trim();
-            const normalizedUrl = this.normalizeUrl(url);
-
-            // If editable is empty or only whitespace, handle as standalone URL
+            const normalizedUrl = WiskPasteHandler.normalizeUrl(url);
             if (this.editable.innerText.trim() === '') {
                 event.preventDefault();
-
-                // Internal URLs go to block link-element
-                if (this.isInternalUrl(normalizedUrl)) {
+                if (WiskPasteHandler.isInternalUrl(normalizedUrl)) {
                     wisk.editor.changeBlockType(this.id, {
                         url: normalizedUrl,
-                        title: 'Page', // Will be updated with actual page title
+                        title: 'Page',
                         display: 'block'
                     }, 'link-element');
                 } else {
-                    // External URL - show menu for URL/Bookmark/Embed
                     this.showPasteLinkMenu(url);
                 }
                 return;
             }
         }
 
-        console.log('Pasting:', clipboardData, htmlData);
-        // Check if this is a wisk clipboard format (multi-element paste)
-        if (htmlData && htmlData.includes('__WISK_CLIPBOARD__')) {
-            // Let the document-level paste handler deal with it
+        if (WiskPasteHandler.isWiskClipboardFormat(htmlData)) {
             return;
         }
 
-        if (htmlData) {
-            event.preventDefault();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlData, 'text/html');
-            const structuredElements = [];
-
-            // Helper to convert anchor tags to link-elements
-            const convertLinksToElements = htmlString => {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = htmlString;
-
-                // Drop dangerous elements entirely
-                tempDiv.querySelectorAll('script, style, iframe, object, embed, form, input, button, meta, link, base').forEach(el => el.remove());
-
-                // Remove event handlers from all elements
-                tempDiv.querySelectorAll('*').forEach(el => {
-                    Array.from(el.attributes).forEach(attr => {
-                        if (attr.name.startsWith('on')) {
-                           el.removeAttribute(attr.name);
-                        }
-                    });
-                });
-                const links = tempDiv.querySelectorAll('a');
-                links.forEach(link => {
-                    let href = link.getAttribute('href');
-
-                    // Clean the href if it exists
-                    if (href) {
-                        // Normalize and remove basic escaping
-                        href = href.replace(/\\/g, '').replace(/&quot;/g, '').replace(/&amp;/g, '&').trim();
-                        const safeProtocols = /^(https?:|mailto:|tel:|\/|#)/i;
-                        if (!safeProtocols.test(href)) {
-                            href = null;
-                        }
-                    }
-
-                    if (href) {
-                        const linkText = link.textContent || '';
-
-                        // Create link-element replacement
-                        const linkElement = document.createElement('link-element');
-                        linkElement.setAttribute('url', href);
-                        linkElement.setAttribute('display', 'inline');
-                        linkElement.setAttribute('contenteditable', 'false'); // Make it atomic
-
-                        // Always set title to preserve original link text (for all links)
-                        if (linkText) {
-                            linkElement.setAttribute('title', linkText);
-                        }
-
-                        // Replace anchor with link-element
-                        link.parentNode.replaceChild(linkElement, link);
-                    }
-                });
-                return tempDiv.innerHTML;
-            };
-
-            const getDirectChildrenLi = (listNode) => {
-                return Array.from(listNode.children).filter(child => child.tagName === 'LI');
-            };
-
-            const extractContentFromLi = (li) => {
-                // Extract text and block-level elements from li
-                const clone = li.cloneNode(true);
-
-                // Remove nested ul/ol
-                const nestedLists = clone.querySelectorAll('ul, ol');
-                nestedLists.forEach(list => list.remove());
-
-                // Remove input elements (checkboxes)
-                const inputs = clone.querySelectorAll('input');
-                inputs.forEach(input => input.remove());
-
-                // Find block-level elements (tables, code blocks, etc.)
-                const blockElements = [];
-                const tables = clone.querySelectorAll('table');
-                const codeBlocks = clone.querySelectorAll('pre');
-
-                // Extract tables
-                tables.forEach(table => {
-                    table._extracted = true;
-                    blockElements.push({ type: 'table', node: table.cloneNode(true) });
-                    table.remove();
-                });
-
-                // Extract code blocks
-                codeBlocks.forEach(pre => {
-                    pre._extracted = true;
-                    blockElements.push({ type: 'code', node: pre.cloneNode(true) });
-                    pre.remove();
-                });
-
-                // Extract text content from all paragraphs
-                const paragraphs = clone.querySelectorAll('p');
-                let text = '';
-
-                if (paragraphs.length > 0) {
-                    // Join all paragraph content with line breaks
-                    text = Array.from(paragraphs).map(p => p.innerHTML.trim()).filter(t => t).join('<br>');
-                } else {
-                    // If no paragraphs, get all text content
-                    text = clone.innerHTML.trim();
-                }
-
-                // Remove checkbox markers from text [x] or [ ]
-                text = text.replace(/^\[[\sx]\]\s*/, '');
-
-                return { text, blockElements };
-            };
-
-            const parseTableNode = (tableNode) => {
-                const headers = [];
-                const rows = [];
-
-                // Try to get headers from thead
-                const thead = tableNode.querySelector('thead');
-                if (thead) {
-                    const headerRow = thead.querySelector('tr');
-                    if (headerRow) {
-                        Array.from(headerRow.querySelectorAll('th')).forEach(th => {
-                            headers.push(th.textContent.trim());
-                        });
-                    }
-                }
-
-                // Get tbody or fall back to table itself for rows
-                const tbody = tableNode.querySelector('tbody') || tableNode;
-                Array.from(tbody.querySelectorAll(':scope > tr')).forEach(tr => {
-                    // Skip header row if no thead and row contains th
-                    if (!thead && tr.querySelector('th') && headers.length === 0) {
-                        Array.from(tr.querySelectorAll('th')).forEach(th => {
-                            headers.push(th.textContent.trim());
-                        });
-                        return;
-                    }
-
-                    // Extract row data from td elements
-                    const rowData = [];
-                    Array.from(tr.querySelectorAll('td')).forEach(td => {
-                        rowData.push(td.textContent.trim());
-                    });
-                    if (rowData.length > 0) {
-                        rows.push(rowData);
-                    }
-                });
-
-                return { headers, rows };
-            };
-
-            const parseCodeNode = (node) => {
-                const pre = node.tagName.toLowerCase() === 'pre' ? node : node.closest('pre');
-                const code = pre ? pre.querySelector('code') : (node.tagName.toLowerCase() === 'code' ? node : null);
-                const codeText = code ? code.textContent : node.textContent;
-
-                let language = 'javascript';
-                if (code && code.className) {
-                    const match = code.className.match(/language-(\w+)/);
-                    if (match) {
-                        language = match[1];
-                    }
-                }
-
-                return {
-                    textContent: codeText.trim(),
-                    language: language
-                };
-            };
-
-            const processListRecursively = (listNode, baseIndent = 0, numberCounters = {}, isCheckboxList = false) => {
-                const results = [];
-                const directChildren = getDirectChildrenLi(listNode);
-                const isNumbered = listNode.tagName === 'OL';
-
-                // Initialize counter for this indent level if not exists
-                if (!numberCounters[baseIndent]) {
-                    numberCounters[baseIndent] = 1;
-                }
-
-                directChildren.forEach((li, index) => {
-                    li._processed = true;
-
-                    // Mark all child elements as processed to prevent duplicate text elements
-                    li.querySelectorAll('*').forEach(child => {
-                        child._processed = true;
-                    });
-
-                    // Extract text and block elements from this li
-                    const { text, blockElements } = extractContentFromLi(li);
-
-                    // Add the list item
-                    const item = {
-                        type: 'list-item',
-                        text: convertLinksToElements(text),
-                        indent: baseIndent,
-                    };
-
-                    if (isNumbered) {
-                        item.number = numberCounters[baseIndent];
-                        numberCounters[baseIndent]++;
-                    }
-
-                    if (isCheckboxList) {
-                        item.checked = li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')?.checked || false;
-                    }
-
-                    results.push(item);
-
-                    // Add extracted block elements
-                    blockElements.forEach(block => {
-                        results.push({
-                            type: 'block-element',
-                            blockType: block.type,
-                            node: block.node,
-                            indent: baseIndent,
-                        });
-                    });
-
-                    // Find nested ul/ol within this li
-                    const nestedList = Array.from(li.children).find(child =>
-                        child.tagName === 'UL' || child.tagName === 'OL'
-                    );
-
-                    if (nestedList) {
-                        nestedList._processed = true;
-                        // Reset counter for child level and recursively process
-                        numberCounters[baseIndent + 1] = 1;
-
-                        // Check if the nested list itself is a checkbox list
-                        const nestedDirectChildren = getDirectChildrenLi(nestedList);
-                        const isNestedCheckboxList = nestedDirectChildren.some(
-                            li => li.textContent.startsWith('[ ]') || li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')
-                        );
-
-                        const nestedResults = processListRecursively(nestedList, baseIndent + 1, numberCounters, isNestedCheckboxList);
-                        results.push(...nestedResults);
-                    }
-                });
-
-                return results;
-            };
-
-            const getIndentLevel = element => {
-                let indent = 0;
-                let parent = element.parentElement;
-                while (parent) {
-                    if (parent.tagName === 'UL' || parent.tagName === 'OL') {
-                        indent++;
-                    }
-                    parent = parent.parentElement;
-                }
-                return Math.max(0, indent - 1);
-            };
-
-            const isPartOfProcessedList = node => {
-                let parent = node.parentElement;
-                while (parent) {
-                    if (parent._processed) {
-                        return true;
-                    }
-                    parent = parent.parentElement;
-                }
-                return false;
-            };
-
-            const processNode = node => {
-                console.log('Processing node:', node);
-
-                // Preserve meaningful text nodes
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const text = node.textContent.trim();
-                    if (text) {
-                        structuredElements.push({
-                            elementName: 'text-element',
-                            value: text,
-                        });
-                    }
-                    return;
-                }
-
-                if (node.nodeType !== Node.ELEMENT_NODE) return;
-
-                let element = null;
-                let skipChildren = false;
-
-                switch (node.tagName.toLowerCase()) {
-                    case 'h1': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'heading1-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'h2': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'heading2-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'h3': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'heading3-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'h4': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'heading4-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'h5': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'heading5-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'ul':
-                    case 'ol': {
-                        if (!node._processed) {
-                            node._processed = true; // Mark as processed
-                            const directLiChildren = getDirectChildrenLi(node);
-                            const isCheckboxList = directLiChildren.some(
-                                li => li.textContent.startsWith('[ ]') || li.textContent.startsWith('[x]') || li.querySelector('input[type="checkbox"]')
-                            );
-
-                            // Determine element name
-                            let elementName;
-                            if (isCheckboxList && node.tagName.toLowerCase() === 'ul') {
-                                elementName = 'checkbox-element';
-                            } else {
-                                elementName = node.tagName.toLowerCase() === 'ul' ? 'list-element' : 'numbered-list-element';
-                            }
-
-                            // Process list recursively
-                            const results = processListRecursively(node, 0, {}, isCheckboxList);
-                            const listItems = results.filter(r => r.type === 'list-item');
-                            const blockElements = results.filter(r => r.type === 'block-element');
-
-                            // Create the list element with all items
-                            element = {
-                                elementName: elementName,
-                                value: listItems.map(item => {
-                                    const itemValue = { text: item.text, indent: item.indent };
-                                    if (item.number !== undefined) {
-                                        itemValue.number = item.number;
-                                    }
-                                    if (item.checked !== undefined) {
-                                        itemValue.checked = item.checked;
-                                    }
-                                    return itemValue;
-                                }),
-                            };
-
-                            // Add block elements as separate elements
-                            blockElements.forEach(blockEl => {
-                                if (blockEl.blockType === 'table') {
-                                    const { headers, rows } = parseTableNode(blockEl.node);
-                                    if (headers.length > 0 || rows.length > 0) {
-                                        structuredElements.push({
-                                            elementName: 'table-element',
-                                            value: {
-                                                tableContent: {
-                                                    headers: headers.length > 0 ? headers : ['Column 1'],
-                                                    rows: rows.length > 0 ? rows : [['']],
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if (blockEl.blockType === 'code') {
-                                    const codeData = parseCodeNode(blockEl.node);
-                                    structuredElements.push({
-                                        elementName: 'code-element',
-                                        value: codeData
-                                    });
-                                }
-                            });
-
-                            skipChildren = true;
-                        }
-                        break;
-                    }
-                    case 'li': {
-                        if (!isPartOfProcessedList(node) && !node._processed) {
-                            const isCheckbox =
-                                node.textContent.startsWith('[ ]') ||
-                                node.textContent.startsWith('[x]') ||
-                                node.querySelector('input[type="checkbox"]');
-
-                            if (isCheckbox) {
-                                element = {
-                                    elementName: 'checkbox-element',
-                                    value: [
-                                        {
-                                            text: convertLinksToElements(node.innerHTML.replace(/^\[[\sx]\]\s*/, '').trim()),
-                                            checked: node.textContent.startsWith('[x]') || node.querySelector('input[type="checkbox"]')?.checked,
-                                            indent: getIndentLevel(node),
-                                        },
-                                    ],
-                                };
-                            } else {
-                                element = {
-                                    elementName: 'list-element',
-                                    value: [
-                                        {
-                                            text: convertLinksToElements(node.innerHTML.trim()),
-                                            indent: getIndentLevel(node),
-                                        },
-                                    ],
-                                };
-                            }
-                            skipChildren = true;
-                        }
-                        break;
-                    }
-                    case 'blockquote':
-                        element = { elementName: 'quote-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        skipChildren = true;
-                        break;
-                    case 'pre':
-                    case 'code':
-                        element = {
-                            elementName: 'code-element',
-                            value: parseCodeNode(node)
-                        };
-                        skipChildren = true;
-                        break;
-                    case 'hr': {
-                        element = { elementName: 'divider-element', value: '' };
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'img': {
-                        if (node.src) {
-                            element = {
-                                elementName: 'image-element',
-                                value: node.src,
-                            };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'p': {
-                        if (node.textContent.trim()) {
-                            element = { elementName: 'text-element', value: convertLinksToElements(node.innerHTML.trim()) };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                    case 'table': {
-                        const { headers, rows } = parseTableNode(node);
-                        if (headers.length > 0 || rows.length > 0) {
-                            element = {
-                                elementName: 'table-element',
-                                value: {
-                                    tableContent: {
-                                        headers: headers.length > 0 ? headers : ['Column 1'],
-                                        rows: rows.length > 0 ? rows : [['']],
-                                    }
-                                }
-                            };
-                        }
-                        skipChildren = true;
-                        break;
-                    }
-                }
-
-                if (element) {
-                    structuredElements.push(element);
-                }
-
-                if (!skipChildren) {
-                    node.childNodes.forEach(childNode => {
-                        processNode(childNode);
-                    });
-                }
-            };
-
-            processNode(doc.body);
-
-            const flattenedElements = [];
-
-            structuredElements.forEach(element => {
-                if (Array.isArray(element.value)) {
-                    element.value.forEach((item, index) => {
-                        if (typeof item === 'object') {
-                            const newElement = {
-                                elementName: element.elementName,
-                                value: {
-                                    textContent: item.text || '',
-                                    indent: typeof item.indent === 'number' ? item.indent : 0,
-                                },
-                            };
-
-                            if (element.elementName === 'checkbox-element') {
-                                newElement.value.checked = !!item.checked;
-                            }
-
-                            if (element.elementName === 'numbered-list-element') {
-                                newElement.value.number = item.number !== undefined ? item.number : index + 1;
-                            }
-
-                            flattenedElements.push(newElement);
-                        } else {
-                            flattenedElements.push({
-                                elementName: element.elementName,
-                                value: {
-                                    textContent: item,
-                                },
-                            });
-                        }
-                    });
-                } else if (element.elementName === 'image-element') {
-                    // Handle images
-                    flattenedElements.push({
-                        elementName: element.elementName,
-                        value: {
-                            imageUrl: element.value,
-                            textContent: '',
-                        },
-                    });
-                } else if (element.elementName === 'table-element') {
-                    // Handle tables - pass through the structure
-                    flattenedElements.push({
-                        elementName: element.elementName,
-                        value: element.value,
-                    });
-                } else if (element.elementName === 'code-element') {
-                    // Handle code blocks - pass through the structure
-                    flattenedElements.push({
-                        elementName: element.elementName,
-                        value: element.value,
-                    });
-                } else {
-                    flattenedElements.push({
-                        elementName: element.elementName,
-                        value: {
-                            textContent: element.value,
-                        },
-                    });
-                }
-            });
-
-            console.log('Flattened elements:', JSON.parse(JSON.stringify(flattenedElements)));
-            if (flattenedElements.length === 0) {
-                const text = clipboardData.getData('text') || clipboardData.getData('text/plain');
-                if (text) {
-                    event.preventDefault();
-                    const cleanedText = text.replace(/[\r\n]+/g, ' ').trim();
-                    document.execCommand('insertText', false, cleanedText);
-                }
-                return;
-            }
-
-            var inx = 0;
-            var lastId = this.id;
-
-            // Only append to current block if it's a text-element AND current block is not empty
-            if (flattenedElements[0].elementName === 'text-element' &&
-                flattenedElements[0].value.textContent &&
-                flattenedElements[0].value.textContent.trim() !== '' &&
-                this.editable.innerText.trim() !== '') {
-                wisk.editor.updateBlock(this.id, 'value.append', flattenedElements[0].value);
-                inx = 1;
-            }
-
-            for (var i = inx; i < flattenedElements.length; i++) {
-                lastId = wisk.editor.createBlockNoFocus(lastId, flattenedElements[i].elementName, flattenedElements[i].value);
-            }
-
-            return flattenedElements;
-        } else {
-            // No HTML data - check if it's plain text that looks like markdown
-            const text = clipboardData.getData('text') || clipboardData.getData('text/plain');
-            if (text) {
-                event.preventDefault();
-
-                // Check if text looks like markdown
-                if (this.isMarkdownText(text)) {
-                    console.log('Detected markdown text, parsing...');
-                    const parsedElements = this.parseMarkdownText(text);
-
-                    if (parsedElements.length > 0) {
-                        var inx = 0;
-                        var lastId = this.id;
-
-                        // Only append to current block if it's a text-element AND current block is not empty
-                        if (parsedElements[0].elementName === 'text-element' &&
-                            parsedElements[0].value.textContent &&
-                            parsedElements[0].value.textContent.trim() !== '' &&
-                            this.editable.innerText.trim() !== '') {
-                            wisk.editor.updateBlock(this.id, 'value.append', parsedElements[0].value);
-                            inx = 1;
-                        }
-
-                        for (var i = inx; i < parsedElements.length; i++) {
-                            lastId = wisk.editor.createBlockNoFocus(lastId, parsedElements[i].elementName, parsedElements[i].value);
-                        }
-
-                        return parsedElements;
-                    }
-                }
-
-                // Not markdown or parsing failed - insert as plain text
-                const cleanedText = text.replace(/[\r\n]+/g, ' ').trim();
-                console.log('Cleaned text:', cleanedText);
-                document.execCommand('insertText', false, cleanedText);
-                this.sendUpdates();
-            }
+        const result = WiskPasteHandler.handleTextElementPaste(event, this.id, {
+            isCurrentBlockEmpty: this.editable.innerText.trim() === ''
+        });
+
+        if (result.handled) {
+            this.sendUpdates();
         }
-        return [];
+
+        return result.elements || [];
     }
 }
 
