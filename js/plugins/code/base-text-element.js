@@ -675,6 +675,7 @@ class BaseTextElement extends HTMLElement {
         }
 
         if (newType != 'uwu') {
+            event.preventDefault();
             var val = { textContent: '' };
             if (this.editable.innerText.trim() === '- [x]') {
                 val.checked = true;

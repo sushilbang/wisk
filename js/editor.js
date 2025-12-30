@@ -1800,10 +1800,52 @@ function handleDrop(e) {
         if (targetId != elementId) {
             wisk.editor.deleteBlock(elementId);
             wisk.editor.createNewBlock(targetId, originalComponent, originalValue, { x: 0 });
+            setTimeout(renumberNumberedLists, 50);
         }
     }
 
     cleanupDrag();
+}
+
+function renumberNumberedLists() {
+    const elements = wisk.editor.document.data.elements;
+    const counters = [0]; // Stack for tracking numbers at each indent level
+
+    for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        if (el.component === 'numbered-list-element') {
+            const domEl = document.getElementById(el.id);
+            if (!domEl) continue;
+
+            const indent = domEl.indent || 0;
+
+            // Adjust counter stack for current indent level
+            while (counters.length <= indent) {
+                counters.push(0);
+            }
+            while (counters.length > indent + 1) {
+                counters.pop();
+            }
+
+            // Increment counter for current level
+            counters[indent]++;
+
+            // Update the element's number
+            const newNumber = counters[indent];
+            if (domEl.number !== newNumber) {
+                domEl.number = newNumber;
+                domEl.updateNumber();
+                el.value.number = newNumber;
+            }
+        } else {
+            // Reset counters when encountering non-numbered-list element
+            counters.length = 1;
+            counters[0] = 0;
+        }
+    }
+
+    // Save modifications
+    wisk.editor.justUpdates(elements[0]?.id);
 }
 
 // Rectangle Selection Functions
@@ -2022,8 +2064,9 @@ function createSelectionOverlay(elementContainer, elementId) {
     // Helper function to get all text nodes, including within shadow roots
     function getTextNodes(node, results = []) {
         if (node.nodeType === Node.TEXT_NODE) {
-            // Only include text nodes with non-whitespace content
-            if (node.textContent.trim().length > 0) {
+            // Only include text nodes with visible content (exclude whitespace and &nbsp;)
+            const visibleContent = node.textContent.replace(/[\s\u00A0]/g, '');
+            if (visibleContent.length > 0) {
                 results.push(node);
             }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
