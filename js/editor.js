@@ -1800,14 +1800,14 @@ function handleDrop(e) {
         if (targetId != elementId) {
             wisk.editor.deleteBlock(elementId);
             wisk.editor.createNewBlock(targetId, originalComponent, originalValue, { x: 0 });
-            setTimeout(renumberNumberedLists, 50);
+            setTimeout(wisk.editor.renumberNumberedLists, 50);
         }
     }
 
     cleanupDrag();
 }
 
-function renumberNumberedLists() {
+wisk.editor.renumberNumberedLists = function() {
     const elements = wisk.editor.document.data.elements;
     const counters = [0]; // Stack for tracking numbers at each indent level
 

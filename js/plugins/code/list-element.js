@@ -103,8 +103,8 @@ class ListElement extends BaseTextElement {
                 this.sendUpdates();
             } else {
                 const prevElement = wisk.editor.prevElement(this.id);
-                const prevDomElement = wisk.editor.getElement(prevElement.id);
                 if (prevElement) {
+                    const prevDomElement = wisk.editor.getElement(prevElement.id);
                     const prevComponentDetail = wisk.plugins.getPluginDetail(prevElement.component);
                     if (prevComponentDetail.textual) {
                         const len = prevDomElement.value.textContent.length;

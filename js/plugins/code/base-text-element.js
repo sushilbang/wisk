@@ -1555,18 +1555,18 @@ class BaseTextElement extends HTMLElement {
 
     handleVerticalArrow(event, direction) {
         const pos = this.getFocus();
+        const len = this.editable.innerText.length;
 
         setTimeout(() => {
             const newPos = this.getFocus();
-            if ((direction === 'next-up' && newPos === 0) || (direction === 'next-down' && newPos === this.editable.innerText.length)) {
-                const adjacentElement = direction === 'next-up' ? wisk.editor.prevElement(this.id) : wisk.editor.nextElement(this.id);
+            if (pos !== newPos) return; // cursor moved within element, do nothing
 
-                if (adjacentElement) {
-                    const componentDetail = wisk.plugins.getPluginDetail(adjacentElement.component);
-                    if (componentDetail.textual) {
-                        wisk.editor.focusBlock(adjacentElement.id, { x: pos });
-                    }
-                }
+            const adjacentElement = direction === 'next-up' ? wisk.editor.prevElement(this.id) : wisk.editor.nextElement(this.id);
+            if (!adjacentElement) return;
+
+            const componentDetail = wisk.plugins.getPluginDetail(adjacentElement.component);
+            if (componentDetail.textual) {
+                wisk.editor.focusBlock(adjacentElement.id, { x: newPos });
             }
         }, 0);
     }

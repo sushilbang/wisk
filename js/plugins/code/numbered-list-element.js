@@ -118,44 +118,44 @@ class NumberedListElement extends BaseTextElement {
     }
 
     handleEnterKey(event) {
-    event.preventDefault();
-    const selection = this.shadowRoot.getSelection();
-    const range = selection.getRangeAt(0);
+        event.preventDefault();
+        const selection = this.shadowRoot.getSelection();
+        const range = selection.getRangeAt(0);
 
-    const beforeRange = document.createRange();
-    beforeRange.setStart(this.editable, 0);
-    beforeRange.setEnd(range.startContainer, range.startOffset);
+        const beforeRange = document.createRange();
+        beforeRange.setStart(this.editable, 0);
+        beforeRange.setEnd(range.startContainer, range.startOffset);
 
-    const afterRange = document.createRange();
-    afterRange.setStart(range.endContainer, range.endOffset);
-    afterRange.setEnd(this.editable, this.editable.childNodes.length);
+        const afterRange = document.createRange();
+        afterRange.setStart(range.endContainer, range.endOffset);
+        afterRange.setEnd(this.editable, this.editable.childNodes.length);
 
-    const beforeContainer = document.createElement('div');
-    const afterContainer = document.createElement('div');
+        const beforeContainer = document.createElement('div');
+        const afterContainer = document.createElement('div');
 
-    beforeContainer.appendChild(beforeRange.cloneContents());
-    afterContainer.appendChild(afterRange.cloneContents());
+        beforeContainer.appendChild(beforeRange.cloneContents());
+        afterContainer.appendChild(afterRange.cloneContents());
 
-    this.editable.innerHTML = beforeContainer.innerHTML;
-    this.sendUpdates();
+        this.editable.innerHTML = beforeContainer.innerHTML;
+        this.sendUpdates();
 
-    const isEmpty = this.editable.innerText.trim().length === 0 && this.editable.children.length === 0;
+        const isEmpty = this.editable.innerText.trim().length === 0 && this.editable.children.length === 0;
 
-    if (isEmpty) {
-        wisk.editor.changeBlockType(this.id, { textContent: afterContainer.innerHTML }, 'text-element');
-    } else {
-        wisk.editor.createNewBlock(
-            this.id,
-            'numbered-list-element',
-            {
-                textContent: afterContainer.innerHTML,
-                indent: this.indent,
-                number: this.number + 1,
-            },
-            { x: 0 }
-        );
+        if (isEmpty) {
+            wisk.editor.changeBlockType(this.id, { textContent: afterContainer.innerHTML }, 'text-element');
+        } else {
+            wisk.editor.createNewBlock(
+                this.id,
+                'numbered-list-element',
+                {
+                    textContent: afterContainer.innerHTML,
+                    indent: this.indent,
+                    number: this.number + 1,
+                },
+                { x: 0 }
+            );
+        }
     }
-}
 
 
     handleBackspace(event) {
@@ -168,8 +168,8 @@ class NumberedListElement extends BaseTextElement {
                 this.sendUpdates();
             } else {
                 const prevElement = wisk.editor.prevElement(this.id);
-                const prevDomElement = wisk.editor.getElement(prevElement.id);
                 if (prevElement) {
+                    const prevDomElement = wisk.editor.getElement(prevElement.id);
                     const prevComponentDetail = wisk.plugins.getPluginDetail(prevElement.component);
                     if (prevComponentDetail.textual) {
                         const len = prevDomElement.value.textContent.length;
@@ -179,6 +179,7 @@ class NumberedListElement extends BaseTextElement {
                         wisk.editor.focusBlock(prevElement.id, { x: len });
                     }
                     wisk.editor.deleteBlock(this.id);
+                    setTimeout(wisk.editor.renumberNumberedLists, 50);
                 }
             }
         }
