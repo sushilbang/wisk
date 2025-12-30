@@ -205,6 +205,23 @@ nav {
     scale: 1.1;
 }
 
+.drag-handle {
+    cursor: grab;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+body.is-dragging,
+body.is-dragging * {
+    cursor: grabbing !important;
+}
+
+body.context-menu-open .drag-handle {
+    cursor: default;
+}
+
 @media (min-width: 900px) {
     .nav-disappear {
         opacity: 0;

@@ -37,6 +37,8 @@ const createHoverImageContainer = elementId => {
     const addButton = createHoverButton('/a7/forget/plus-hover.svg', () => whenPlusClicked(elementId));
     const selectButton = createHoverButton('/a7/forget/dots-grid3x3.svg', () => whenSelectClicked(elementId));
 
+    selectButton.classList.add('drag-handle');
+
     selectButton.addEventListener('mousedown', event => {
         dragHoldTimer = setTimeout(() => {
             onDragStart(event, elementId);
@@ -1467,6 +1469,7 @@ function createMenuItem(label, onClick, itemClass = '', icon = '/a7/forget/null.
     item.addEventListener('click', e => {
         e.stopPropagation();
         onClick();
+        document.body.classList.remove('context-menu-open');
         const existingMenu = document.querySelector('.context-menu');
         if (existingMenu) {
             existingMenu.remove();
@@ -1545,6 +1548,7 @@ function whenSelectClicked(elementId) {
     }
 
     document.body.appendChild(contextMenu);
+    document.body.classList.add('context-menu-open');
 
     // positioning
     const hover = blockDiv.querySelector('.hover-images') || blockDiv;
@@ -1590,6 +1594,7 @@ function whenSelectClicked(elementId) {
     const scrollerEl = document.querySelector('.editor');
 
     function cleanup() {
+        document.body.classList.remove('context-menu-open');
         if (contextMenu && contextMenu.parentNode) contextMenu.remove();
         if (scrollerEl && scrollerEl.removeEventListener) {
             scrollerEl.removeEventListener('scroll', onScroll);
@@ -1664,6 +1669,7 @@ function onDragStart(event, elementId) {
     if (elementId == 'abcdxyz') return;
     event.preventDefault();
     event.stopPropagation();
+    document.body.classList.add('is-dragging');
     // clone the element
     const original = document.getElementById(elementId);
     const block = wisk.editor.getElement(elementId);
@@ -1698,6 +1704,8 @@ function handleDragKeydown(e) {
 
 function cleanupDrag() {
     if (!dragState) return;
+
+    document.body.classList.remove('is-dragging');
 
     if (autoScroll) {
         clearInterval(autoScroll);
