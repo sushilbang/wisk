@@ -2061,25 +2061,25 @@ function createSelectionOverlay(elementContainer, elementId) {
     const editorRect = editorElement.getBoundingClientRect();
     const overlays = [];
 
-    // Helper function to get all text nodes, including within shadow roots
+    // Helper function to get all text nodes from editable content only
     function getTextNodes(node, results = []) {
         if (node.nodeType === Node.TEXT_NODE) {
-            // Only include text nodes with visible content (exclude whitespace and &nbsp;)
-            const visibleContent = node.textContent.replace(/[\s\u00A0]/g, '');
-            if (visibleContent.length > 0) {
+            // Only include text nodes with non-whitespace content
+            if (node.textContent.trim().length > 0) {
                 results.push(node);
             }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-            // Check for shadow root
+            // Check for shadow root - only get #editable content
             if (node.shadowRoot) {
-                for (const child of node.shadowRoot.childNodes) {
+                const editable = node.shadowRoot.querySelector('#editable');
+                if (editable) {
+                    getTextNodes(editable, results);
+                }
+            } else {
+                // Process regular child nodes
+                for (const child of node.childNodes) {
                     getTextNodes(child, results);
                 }
-            }
-
-            // Process regular child nodes
-            for (const child of node.childNodes) {
-                getTextNodes(child, results);
             }
         }
         return results;
