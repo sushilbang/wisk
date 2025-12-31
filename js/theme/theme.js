@@ -32,7 +32,12 @@ wisk.theme.setTheme = async function (themeName) {
         }
     });
 
-    const styleSheet = document.createElement('style');
+    let styleSheet = document.getElementById('wisk-theme-selection-style');
+    if (!styleSheet) {
+        styleSheet = document.createElement('style');
+        styleSheet.id = 'wisk-theme-selection-style';
+        document.head.appendChild(styleSheet);
+    }
     styleSheet.textContent = `
         ::selection {
             background-color: var(--fg-accent);
@@ -43,15 +48,17 @@ wisk.theme.setTheme = async function (themeName) {
             color: var(--bg-accent);
         }
     `;
-    document.head.appendChild(styleSheet);
 
     const textColor = theme['--fg-1'] || '#000000';
     const bgColor = theme['--bg-1'] || '#ffffff';
-    const favicon = document.querySelector('link[rel="icon"]') || document.createElement('link');
-    favicon.rel = 'icon';
-    favicon.type = 'image/svg+xml';
+    let favicon = document.querySelector('link[rel="icon"]');
+    if (!favicon) {
+        favicon = document.createElement('link');
+        favicon.rel = 'icon';
+        favicon.type = 'image/svg+xml';
+        document.head.appendChild(favicon);
+    }
     favicon.href = createThemedFaviconSVG(textColor, bgColor);
-    document.head.appendChild(favicon);
 
     // make a event to notify the theme change
     const event = new CustomEvent('wisk-theme-changed', { detail: { theme: theme } });
