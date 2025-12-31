@@ -102,10 +102,15 @@ wisk.theme.addTheme = function (themeData) {
 
     wisk.theme.themeObject.themes.push(themeData);
 
-    wisk.editor.registerCommand(themeData.name, '', 'Theme', () => wisk.theme.setTheme(themeData.name), '');
+    const themeName = themeData.name;
+    wisk.editor.registerCommand(themeName, '', 'Theme', async () => {
+        wisk.theme.setTheme(themeName);
+        await wisk.editor.addConfigChange('document.config.theme', themeName);
+    }, '');
 
-    console.log('Theme "' + themeData.name + '" added successfully');
-    wisk.theme.setTheme(themeData.name);
+    console.log('Theme "' + themeName + '" added successfully');
+    wisk.theme.setTheme(themeName);
+    wisk.editor.addConfigChange('document.config.theme', themeName);
 
     return true;
 };
@@ -128,8 +133,12 @@ async function initTheme() {
         const response = await fetch(jsonUrl);
         const data = await response.json();
         wisk.theme.themeObject = data;
-        for (let i = 0; i < data.themes.length; i++) {
-            wisk.editor.registerCommand(data.themes[i].name, '', 'Theme', () => wisk.theme.setTheme(data.themes[i].name), '');
+        for (const theme of data.themes) {
+            const themeName = theme.name;
+            wisk.editor.registerCommand(themeName, '', 'Theme', async () => {
+                wisk.theme.setTheme(themeName);
+                await wisk.editor.addConfigChange('document.config.theme', themeName);
+            }, '');
         }
         await wisk.theme.setTheme(defaultTheme);
     } catch (error) {

@@ -9,8 +9,8 @@
 }
 
 body {
-    background-color: #ffffff;
-    color: #333;
+    background-color: var(--bg-1, #ffffff);
+    color: var(--fg-1, #333);
     line-height: 1.6;
 }
 
