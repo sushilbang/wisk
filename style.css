@@ -51,8 +51,6 @@ nav {
 .nav-plugins {
     display: flex;
     gap: var(--gap-2);
-    display: flex;
-    gap: var(--gap-2);
     background: var(--bg-1);
     padding: var(--padding-2);
     border-radius: var(--radius);
@@ -103,6 +101,15 @@ nav {
     mix-blend-mode: difference;
     filter: invert(100%) contrast(1000%) brightness(1000%);
     width: 22px;
+    cursor: pointer;
+    outline: none;
+    background-color: transparent;
+    border: 1px solid var(--bg-1);
+    border-radius: var(--radius);
+    padding: var(--padding-2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .rndr:hover > .left-buttons {
@@ -111,19 +118,6 @@ nav {
 
 .rndr > *:last-child {
     flex: 1;
-}
-
-.left-buttons {
-    cursor: pointer;
-    outline: none;
-    border: none;
-    background-color: transparent;
-    border: 1px solid var(--bg-1);
-    border-radius: var(--radius);
-    padding: var(--padding-2);
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 .left-buttons:hover {

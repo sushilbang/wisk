@@ -21,6 +21,7 @@ let autoScroll = null;
 const SCROLL_ZONE_SIZE = 40;
 const SCROLL_SPEED = 10;
 const SCROLL_INTERVAL = 16;
+let dragUpdateScheduled = false;
 // rectangle selection vars
 let rectangleSelectionState = null;
 let selectionRectangle = null;
@@ -1731,18 +1732,28 @@ function handleDrag(e) {
     if (!dragState) return;
 
     const event = e.touches ? e.touches[0] : e;
+    dragState.latestClientX = event.clientX;
+    dragState.latestClientY = event.clientY;
 
-    const { clone } = dragState;
-    clone.style.left = event.clientX + 'px';
-    clone.style.top = event.clientY + 'px';
-    const elementAbove = getElementAbove(event.clientX, event.clientY);
-    const targetContainer = elementAbove ? elementAbove.closest('.rndr') : null;
-    if (targetContainer) {
-        showDropIndicator(targetContainer);
-    } else {
-        hideDropIndicator();
-    }
-    handleScroll(event.clientY);
+    if (dragUpdateScheduled) return;
+    dragUpdateScheduled = true;
+
+    requestAnimationFrame(() => {
+        dragUpdateScheduled = false;
+        if (!dragState) return;
+
+        const { clone, latestClientX, latestClientY } = dragState;
+        clone.style.left = latestClientX + 'px';
+        clone.style.top = latestClientY + 'px';
+        const elementAbove = getElementAbove(latestClientX, latestClientY);
+        const targetContainer = elementAbove ? elementAbove.closest('.rndr') : null;
+        if (targetContainer) {
+            showDropIndicator(targetContainer);
+        } else {
+            hideDropIndicator();
+        }
+        handleScroll(latestClientY);
+    });
 }
 
 function handleScroll(y) {
