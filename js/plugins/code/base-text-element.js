@@ -452,6 +452,12 @@ class BaseTextElement extends HTMLElement {
         this.editable.addEventListener('focus', () => {
             this.isEditableFocused = true;
             this.updatePlaceholder();
+            // On mobile, scroll into view when focused (above keyboard)
+            if (this.isVirtualKeyboard) {
+                setTimeout(() => {
+                    this.editable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 150);
+            }
         });
 
         this.editable.addEventListener('blur', () => {
@@ -1548,6 +1554,13 @@ class BaseTextElement extends HTMLElement {
             range.collapse(false);
             selection.removeAllRanges();
             selection.addRange(range);
+        }
+
+        // On mobile, scroll the focused element into view (above keyboard)
+        if (this.isVirtualKeyboard) {
+            setTimeout(() => {
+                this.editable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 150);
         }
 
         this.updatePlaceholder();

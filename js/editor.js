@@ -24,6 +24,8 @@ const SCROLL_INTERVAL = 16;
 let dragUpdateScheduled = false;
 // rectangle selection vars
 let rectangleSelectionState = null;
+// mobile keyboard vars
+let currentKeyboardHeight = 0;
 let selectionRectangle = null;
 let selectedElements = new Set();
 let selectionOverlays = new Map();
@@ -1761,6 +1763,8 @@ function handleScroll(y) {
     if (!scrollContainer) return;
 
     const containerRect = scrollContainer.getBoundingClientRect();
+    // Account for keyboard height when determining visible bottom
+    const visibleBottom = containerRect.bottom - currentKeyboardHeight;
 
     // clear existing scroll
     if (autoScroll) {
@@ -1774,9 +1778,9 @@ function handleScroll(y) {
     if (y < containerRect.top + SCROLL_ZONE_SIZE) {
         scrollDir = -1; // up
         distance = containerRect.top + SCROLL_ZONE_SIZE - y;
-    } else if (y > containerRect.bottom - SCROLL_ZONE_SIZE) {
+    } else if (y > visibleBottom - SCROLL_ZONE_SIZE) {
         scrollDir = 1; // down
-        distance = y - (containerRect.bottom - SCROLL_ZONE_SIZE);
+        distance = y - (visibleBottom - SCROLL_ZONE_SIZE);
     }
 
     if (scrollDir !== 0) {
@@ -2752,3 +2756,34 @@ function initKeyboardDetection() {
 }
 
 initKeyboardDetection();
+
+// Handle virtual keyboard visibility changes
+window.addEventListener('virtual-keyboard-visible', e => {
+    const { isVisible, height } = e.detail;
+    currentKeyboardHeight = isVisible ? height : 0;
+
+    const editor = document.querySelector('.editor');
+    if (!editor) return;
+
+    // Add padding to prevent content from being hidden behind keyboard
+    editor.style.paddingBottom = isVisible ? `${height}px` : '';
+
+    // Scroll the focused element into view
+    if (isVisible) {
+        const activeElement = document.activeElement;
+        // Check if it's a custom element with shadow DOM
+        const shadowRoot = activeElement?.shadowRoot;
+        const focusedEditable = shadowRoot?.activeElement || shadowRoot?.querySelector('[contenteditable="true"]:focus');
+
+        if (focusedEditable) {
+            // Use a small delay to let the keyboard finish animating
+            setTimeout(() => {
+                focusedEditable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        } else if (activeElement?.closest('.rndr')) {
+            setTimeout(() => {
+                activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+    }
+});
