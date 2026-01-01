@@ -526,8 +526,8 @@ class HomeElement extends LitElement {
             opacity: 1;
         }
 
-        .tree-item:hover .tree-icon .emoji,
-        .tree-item:hover .tree-icon .page-icon {
+        .tree-item:hover .tree-icon:has(.arrow) .emoji,
+        .tree-item:hover .tree-icon:has(.arrow) .page-icon {
             opacity: 0;
         }
 
@@ -1292,7 +1292,7 @@ class HomeElement extends LitElement {
                     <div class="templates-grid" style="display: ${this.expandTemplates ? 'grid' : 'none'}">
                         ${this.expandTemplates
                             ? html`
-                                  ${this.templates.map(
+                                  ${this.templates.slice(3).map(
                                       template => html`
                                           <div class="template-card" @click=${() => this.useTemplate(template)}>
                                               <div class="template-info">
