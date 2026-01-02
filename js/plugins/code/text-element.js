@@ -14,6 +14,7 @@ class TextElement extends BaseTextElement {
                 line-height: 1.5;
                 min-height: 1.5em;
                 padding: 2px 0;
+                font-size: var(--editor-font-size, 17px);
             }
             #editable.empty:focus:before {
                 content: attr(data-placeholder);

@@ -223,6 +223,7 @@ class NumberedListElement extends BaseTextElement {
                 outline: none;
                 transition: padding-left 0.1s ease-in-out;
                 min-height: 24px;
+                font-size: var(--editor-font-size, 17px);
             }
             #editable.empty:empty:before {
                 content: attr(data-placeholder);

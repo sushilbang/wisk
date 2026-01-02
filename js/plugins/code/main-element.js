@@ -681,7 +681,7 @@ class MainElement extends BaseTextElement {
                 outline: none;
                 position: relative;
                 line-height: 1.5;
-                font-size: 2.5em;
+                font-size: calc(var(--editor-font-size, 17px) * 2.5);
                 font-weight: 700;
                 flex-grow: 1;
                 background: transparent;
