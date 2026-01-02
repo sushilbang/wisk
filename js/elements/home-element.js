@@ -189,6 +189,12 @@ class HomeElement extends LitElement {
             cursor: pointer;
         }
 
+        @media (min-width: 769px) {
+            .mobile-only-template {
+                display: none;
+            }
+        }
+
         .file-card {
             padding: var(--padding-4);
             border-radius: var(--radius-large);
@@ -1292,9 +1298,9 @@ class HomeElement extends LitElement {
                     <div class="templates-grid" style="display: ${this.expandTemplates ? 'grid' : 'none'}">
                         ${this.expandTemplates
                             ? html`
-                                  ${this.templates.slice(3).map(
-                                      template => html`
-                                          <div class="template-card" @click=${() => this.useTemplate(template)}>
+                                  ${this.templates.map(
+                                      (template, index) => html`
+                                          <div class="template-card ${index < 3 ? 'mobile-only-template' : ''}" @click=${() => this.useTemplate(template)}>
                                               <div class="template-info">
                                                   <h3>${template.name}</h3>
                                                   <span class="template-by">By ${template.by}</span>
