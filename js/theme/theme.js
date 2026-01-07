@@ -140,14 +140,6 @@ wisk.theme.getThemeData = function (theme) {
     return wisk.theme.themeObject.themes.find(t => t.name === theme);
 };
 
-window.addEventListener('pageshow', function(event) {
-    if (event.persisted) {
-        // Page was restored from bfcache, re-apply theme from localStorage
-        const savedTheme = localStorage.getItem('webapp-theme') || 'default';
-        wisk.theme.setTheme(savedTheme);
-    }
-});
-
 async function initTheme() {
     const jsonUrl = SERVER + '/js/theme/theme-data.json';
     try {
