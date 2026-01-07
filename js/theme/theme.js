@@ -107,6 +107,31 @@ wisk.theme.getTheme = function () {
     return localStorage.getItem('webapp-theme');
 };
 
+wisk.theme.getWorkspaceTheme = function () {
+    const workspacesData = localStorage.getItem('workspaces');
+    if (!workspacesData) return null;
+
+    const parsed = JSON.parse(workspacesData);
+    const currentWorkspaceId = localStorage.getItem('currentWorkspace');
+    const workspace = parsed.workspaces.find(w => w.id === currentWorkspaceId);
+
+    return workspace?.theme || null;
+};
+
+wisk.theme.setWorkspaceTheme = function (themeName) {
+    const workspacesData = localStorage.getItem('workspaces');
+    if (!workspacesData) return;
+
+    const parsed = JSON.parse(workspacesData);
+    const currentWorkspaceId = localStorage.getItem('currentWorkspace');
+    const workspaceIndex = parsed.workspaces.findIndex(w => w.id === currentWorkspaceId);
+
+    if (workspaceIndex !== -1) {
+        parsed.workspaces[workspaceIndex].theme = themeName;
+        localStorage.setItem('workspaces', JSON.stringify(parsed));
+    }
+};
+
 wisk.theme.getThemes = function () {
     return wisk.theme.themeObject.themes;
 };
@@ -114,6 +139,14 @@ wisk.theme.getThemes = function () {
 wisk.theme.getThemeData = function (theme) {
     return wisk.theme.themeObject.themes.find(t => t.name === theme);
 };
+
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        // Page was restored from bfcache, re-apply theme from localStorage
+        const savedTheme = localStorage.getItem('webapp-theme') || 'default';
+        wisk.theme.setTheme(savedTheme);
+    }
+});
 
 async function initTheme() {
     const jsonUrl = SERVER + '/js/theme/theme-data.json';
