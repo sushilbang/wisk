@@ -508,6 +508,11 @@ class WiskPasteHandler {
                     elementName: element.elementName,
                     value: element.value,
                 });
+            } else if (element.elementName === 'latex-element') {
+                flattenedElements.push({
+                    elementName: element.elementName,
+                    value: element.value,
+                });
             } else {
                 flattenedElements.push({
                     elementName: element.elementName,
@@ -559,6 +564,8 @@ class WiskPasteHandler {
             else if (/^\|.+\|$/.test(trimmed)) markdownPatterns++;
             // Table separator
             else if (/^\|[\s\-:|]+\|$/.test(trimmed)) markdownPatterns++;
+            // LaTeX block equations ($$...$$ or \[...\])
+            else if (/^\$\$/.test(trimmed) || /^\\\[/.test(trimmed)) markdownPatterns++;
         }
         return markdownPatterns > 0 && (markdownPatterns >= 1 || markdownPatterns / lines.length >= 0.2);
     }
@@ -645,6 +652,114 @@ class WiskPasteHandler {
                         language: language
                     }
                 });
+                continue;
+            }
+
+            // LaTeX block equations ($$...$$)
+            if (trimmedLine.startsWith('$$')) {
+                // Check for single-line equation: $$equation$$
+                if (trimmedLine.length > 4 && trimmedLine.endsWith('$$')) {
+                    const latex = trimmedLine.slice(2, -2).trim();
+                    if (latex) {
+                        elements.push({
+                            elementName: 'latex-element',
+                            value: { latex: latex }
+                        });
+                    }
+                    i++;
+                    continue;
+                }
+
+                // Multi-line equation
+                const latexLines = [];
+                const firstLineContent = trimmedLine.slice(2).trim();
+                if (firstLineContent) {
+                    latexLines.push(firstLineContent);
+                }
+                i++;
+
+                while (i < lines.length) {
+                    const currentLine = lines[i];
+                    const currentTrimmed = currentLine.trim();
+
+                    // Check for closing $$
+                    if (currentTrimmed.endsWith('$$')) {
+                        const lastLineContent = currentTrimmed.slice(0, -2).trim();
+                        if (lastLineContent) {
+                            latexLines.push(lastLineContent);
+                        }
+                        i++;
+                        break;
+                    } else if (currentTrimmed === '$$') {
+                        i++;
+                        break;
+                    }
+
+                    latexLines.push(currentLine);
+                    i++;
+                }
+
+                const latex = latexLines.join('\n').trim();
+                if (latex) {
+                    elements.push({
+                        elementName: 'latex-element',
+                        value: { latex: latex }
+                    });
+                }
+                continue;
+            }
+
+            // LaTeX block equations (\[...\])
+            if (trimmedLine.startsWith('\\[')) {
+                // Check for single-line equation: \[equation\]
+                if (trimmedLine.endsWith('\\]') && trimmedLine.length > 4) {
+                    const latex = trimmedLine.slice(2, -2).trim();
+                    if (latex) {
+                        elements.push({
+                            elementName: 'latex-element',
+                            value: { latex: latex }
+                        });
+                    }
+                    i++;
+                    continue;
+                }
+
+                // Multi-line equation
+                const latexLines = [];
+                const firstLineContent = trimmedLine.slice(2).trim();
+                if (firstLineContent) {
+                    latexLines.push(firstLineContent);
+                }
+                i++;
+
+                while (i < lines.length) {
+                    const currentLine = lines[i];
+                    const currentTrimmed = currentLine.trim();
+
+                    // Check for closing \]
+                    if (currentTrimmed.endsWith('\\]')) {
+                        const lastLineContent = currentTrimmed.slice(0, -2).trim();
+                        if (lastLineContent) {
+                            latexLines.push(lastLineContent);
+                        }
+                        i++;
+                        break;
+                    } else if (currentTrimmed === '\\]') {
+                        i++;
+                        break;
+                    }
+
+                    latexLines.push(currentLine);
+                    i++;
+                }
+
+                const latex = latexLines.join('\n').trim();
+                if (latex) {
+                    elements.push({
+                        elementName: 'latex-element',
+                        value: { latex: latex }
+                    });
+                }
                 continue;
             }
 
