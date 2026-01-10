@@ -63,7 +63,6 @@ wisk.sync = {
     instance: '',
     changes: [],
     newChange: function (change) {},
-    saveUpdates: function () {},
 };
 
 var rand7 = () => {

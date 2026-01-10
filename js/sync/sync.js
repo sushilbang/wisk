@@ -1,17 +1,133 @@
-// sync.js
+// State
 let socket;
 let firstMsg = true;
-
-// events
-wisk.sync.eventLog = [];
-
-// Centralized save queue to prevent overlapping saves
 let saveQueue = Promise.resolve();
 let saveScheduled = false;
 
+wisk.sync.eventLog = [];
+
+// Event System - Core
+wisk.sync.newChange = function(event) {
+    if (!event || !event.path || !event.value || event.value.data === undefined) {
+        console.error('Invalid event:', event);
+        return;
+    }
+
+    event.value.timestamp ??= Date.now();
+    event.value.agent ??= wisk.sync.agent;
+
+    wisk.sync.eventLog.push(event);
+};
+
+function applyEvent(document, event) {
+    const pathParts = event.path.split('.');
+    const actualValue = event.value.data;
+
+    // Case 0: Full document restore (snapshot)
+    if (event.action === 'restore') {
+        document.data = actualValue;
+        document.lastUpdated = event.value.timestamp;
+        return;
+    }
+
+    // Case 1: Element reordering
+    if (event.path === 'data.elementOrder') {
+        if (!document.data) document.data = {};
+        document.data.elementOrder = actualValue;
+
+        if (Array.isArray(document.data.elements)) {
+            const elementsById = new Map(document.data.elements.map(e => [e.id, e]));
+            document.data.elements = actualValue
+                .map(id => elementsById.get(id))
+                .filter(Boolean);
+        }
+        document.lastUpdated = event.value.timestamp;
+        return;
+    }
+
+    // Case 2: New element creation
+    if (event.path === 'data.elements') {
+        if (!document.data) document.data = {};
+        if (!document.data.elements) document.data.elements = [];
+        document.data.elements.push(actualValue);
+        document.lastUpdated = event.value.timestamp;
+        return;
+    }
+
+    // Case 3: Generic path traversal
+    let current = document;
+
+    for (let i = 0; i < pathParts.length - 1; i++) {
+        const key = pathParts[i];
+
+        // 'elements' array uses ID lookup, not index
+        if (key === 'elements' && Array.isArray(current.elements)) {
+            const elementId = pathParts[++i];
+            const element = current.elements.find(e => e.id === elementId);
+            if (!element) {
+                console.warn(`Element ${elementId} not found, skipping event`);
+                return;
+            }
+            current = element;
+            continue;
+        }
+
+        // Create missing intermediate objects (preserve existing arrays)
+        if (current[key] == null || typeof current[key] !== 'object') {
+            current[key] = {};
+        }
+        current = current[key];
+    }
+
+    // Set the final value
+    const lastKey = pathParts[pathParts.length - 1];
+
+    if (lastKey === 'elements' || lastKey === 'deletedElements') {
+        if (!Array.isArray(current[lastKey])) {
+            current[lastKey] = [];
+        }
+        current[lastKey].push(actualValue);
+    } else {
+        current[lastKey] = actualValue;
+    }
+
+    document.lastUpdated = event.value.timestamp;
+}
+
+// Event System - Persistence
+async function saveModification() {
+    if (!wisk.sync.eventLog?.length) {
+        return;
+    }
+
+    const eventsToSave = wisk.sync.eventLog.slice();
+    wisk.sync.eventLog = [];
+
+    // Deep clone for rollback on failure
+    const documentBackup = JSON.parse(JSON.stringify(wisk.editor.document));
+
+    // Apply events to in-memory document
+    eventsToSave.forEach(event => {
+        applyEvent(wisk.editor.document, event);
+    });
+
+    // Store in syncLogs for future server sync
+    wisk.editor.document.data.sync ??= { syncLogs: [], isPushed: false, lastSync: 0 };
+    wisk.editor.document.data.sync.syncLogs ??= [];
+    wisk.editor.document.data.sync.syncLogs.push(...eventsToSave);
+
+    try {
+        await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
+    } catch (error) {
+        console.error('Failed to save, rolling back:', error);
+        wisk.editor.document = documentBackup;
+        wisk.sync.eventLog = eventsToSave.concat(wisk.sync.eventLog);
+        throw error;
+    }
+}
+
 wisk.sync.enqueueSave = function(context = 'unknown') {
     if (saveScheduled) {
-        // A save is already scheduled, it will pick up any pending events
         return saveQueue;
     }
     saveScheduled = true;
@@ -21,36 +137,20 @@ wisk.sync.enqueueSave = function(context = 'unknown') {
         try {
             await wisk.sync.saveModification();
         } catch (error) {
-            console.error(`Failed to save (${context}):`, error);
+            console.error(`Save failed (${context}):`, error);
         }
     });
 
     return saveQueue;
 };
 
-async function sync() {
-    wisk.utils.showLoading('Syncing with server...');
-    console.log('PAGE', wisk.editor.pageId);
-
-    var pages = await wisk.db.getAllPages();
-    // upload all offline pages and update their IDs
-    var offlinePages = [];
-    for (var i = 0; i < pages.length; i++) {
-        if (pages[i].startsWith('of-')) {
-            var offlinePage = await wisk.db.getPage(pages[i]);
-            offlinePages.push(offlinePage);
-        }
-    }
-
-    console.log('Offline pages:', offlinePages);
-}
-
+// WebSockets
 function initializeWebSocket() {
     return new Promise((resolve, reject) => {
         socket = new WebSocket(wisk.editor.wsBackendUrl + '/v1/live');
 
-        socket.addEventListener('open', event => {
-            console.log('Connected to WebSocket server');
+        socket.addEventListener('open', () => {
+            console.log('WebSocket connected');
             resolve();
         });
 
@@ -58,12 +158,12 @@ function initializeWebSocket() {
             handleIncomingMessage(event.data);
         });
 
-        socket.addEventListener('error', event => {
+        socket.addEventListener('error', () => {
             alert('Connection with server failed. Click OK to reload the page.');
             location.reload();
         });
 
-        socket.addEventListener('close', event => {
+        socket.addEventListener('close', () => {
             alert('Connection with server closed. Click OK to reload the page.');
             location.reload();
         });
@@ -71,245 +171,23 @@ function initializeWebSocket() {
 }
 
 function sendMessage(message) {
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (socket?.readyState === WebSocket.OPEN) {
         socket.send(message);
     } else {
-        console.log('Connection is not open. ReadyState:', socket ? socket.readyState : 'socket not initialized');
+        console.log('WebSocket not open. State:', socket?.readyState ?? 'uninitialized');
     }
-}
-
-function startMessageLoop(interval = 5000) {
-    return setInterval(() => {
-        sendMessage('hello');
-    }, interval);
-}
-
-function stopMessageLoop(intervalId) {
-    clearInterval(intervalId);
 }
 
 async function sendAuth() {
-    var user = await document.querySelector('auth-component').getUserInfo();
-    sendMessage(
-        JSON.stringify({
-            id: wisk.editor.pageId,
-            token: user.token,
-        })
-    );
+    const user = await document.querySelector('auth-component').getUserInfo();
+    sendMessage(JSON.stringify({
+        id: wisk.editor.pageId,
+        token: user.token,
+    }));
 }
-
-async function live() {
-    console.log('PAGE LIVE', wisk.editor.pageId);
-
-    if (wisk.editor.readonly) {
-        // TODO
-        // FIXX THIS THIS IS REALLY BAD
-        // the way im adding wisk.site
-        // but i have to ship early
-        const subdomain = window.location.hostname.split('.')[0]; // Extract subdomain
-        var fetchUrl = wisk.editor.backendUrl + '/v1/new?doc=' + getURLParam('uwu') + '&subdomain=' + subdomain; // Add subdomain
-        var fetchOptions = {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        };
-
-        var response = await fetch(fetchUrl, fetchOptions);
-
-        if (response.status !== 200) {
-            window.location.href = '/404.html';
-            return;
-        }
-
-        var data = await response.json();
-        initEditor(data);
-        return;
-    }
-
-    try {
-        // await initializeWebSocket();
-        // await sendAuth();
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
-
-async function saveUpdates() {
-    console.log('Saving updates:', wisk.editor.document);
-    await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
-
-    //// send to server
-    //sendMessage(
-    //    JSON.stringify({
-    //        changes: changes,
-    //        allElements: allElements,
-    //        newDeletedElements: newDeletedElements,
-    //    })
-    //);
-}
-
-wisk.sync.saveUpdates = saveUpdates;
-
-wisk.sync.newChange = function(event) {
-    if (!event || !event.path || !event.value || event.value.data === undefined) {
-        console.error('invalid event: ', event);
-        return;
-    }
-    if(!event.value.timestamp) {
-        event.value.timestamp = Date.now();
-    }
-    if(!event.value.agent) {
-        event.value.agent = wisk.sync.agent;
-    }
-    wisk.sync.eventLog.push(event);
-
-    console.log('New change event logged:', event);
-    console.log('Current event log:', wisk.sync.eventLog);
-}
-
-function applyEvent(document, event) {
-    const pathParts = event.path.split('.');
-    let current = document;
-    let i = 0;
-
-    if (event.path === 'data.elementOrder') {
-        const newOrder = event.value.data;
-        if (!document.data) document.data = {};
-        document.data.elementOrder = newOrder;
-        if (document.data.elements && Array.isArray(document.data.elements)) {
-            const orderedElements = [];
-            newOrder.forEach(id => {
-                const elem = document.data.elements.find(e => e.id === id);
-                if (elem) orderedElements.push(elem);
-            });
-            document.data.elements = orderedElements;
-        }
-
-        document.lastUpdated = event.value.timestamp;
-        console.log('Applied element order event');
-        return;
-    }
-
-    if (event.path === 'data.elements' && pathParts.length === 2) {
-        if (!document.data) document.data = {};
-        if (!document.data.elements) {
-            document.data.elements = [];
-        }
-        document.data.elements.push(event.value.data);
-        document.lastUpdated = event.value.timestamp;
-        console.log('Applied element creation event for:', event.value.data.id);
-        return;
-    }
-
-    // Navigate to the parent of the target property
-    while (i < pathParts.length - 1) {
-        const key = pathParts[i];
-
-        // Handle array operations for elements
-        if (key === 'elements' && current[key] && Array.isArray(current[key])) {
-            i++;
-            const elementId = pathParts[i];
-            const element = current.elements.find(e => e.id === elementId);
-
-            if (!element) {
-                console.warn(`Element ${elementId} not found, skipping event`);
-                return;
-            }
-
-            current = element;
-            i++;
-            continue;
-        }
-
-        // Normal object navigation with safety checks
-        if (!current[key] || typeof current[key] !== 'object' || Array.isArray(current[key])) {
-            current[key] = {};
-            console.log(`Created missing intermediate object: ${pathParts.slice(0, i + 1).join('.')}`);
-        }
-
-        current = current[key];
-        i++;
-    }
-    const lastKey = pathParts[pathParts.length - 1];
-    const actualValue = event.value.data;
-
-    // Special handling for array operations
-    if (lastKey === 'deletedElements' && Array.isArray(current[lastKey])) {
-        current[lastKey].push(actualValue);
-        console.log(`Applied event: pushed to deletedElements`);
-    } else if (lastKey === 'elements' && Array.isArray(current[lastKey])) {
-        current[lastKey].push(actualValue);
-        console.log(`Applied event: added new element`);
-    } else {
-        if (lastKey === 'deletedElements' || lastKey === 'elements') {
-            if (!current[lastKey]) {
-                current[lastKey] = [];
-            }
-            current[lastKey].push(actualValue);
-        } else {
-            current[lastKey] = actualValue;
-        }
-        console.log(`Applied event to ${event.path}`);
-    }
-    document.lastUpdated = event.value.timestamp;
-
-    console.log('Applied event:', event);
-}
-
-async function saveModification() {
-    console.log('Saving modifications. Event log:', wisk.sync.eventLog);
-
-    if (!wisk.sync.eventLog || wisk.sync.eventLog.length === 0) {
-        console.log('No events to save');
-        return;
-    }
-    if (!wisk.editor.document) {
-        console.error('Cannot save: wisk.editor.document is not initialized');
-        return;
-    }
-    if (!wisk.editor.document.data) {
-        wisk.editor.document.data = {};
-    }
-
-    // Store event count before modifications for accurate rollback
-    const eventsToSave = wisk.sync.eventLog.slice();
-    wisk.sync.eventLog = [];
-    const eventCount = eventsToSave.length;
-    // Apply all pending events to the in-memory document
-    eventsToSave.forEach(event => {
-        applyEvent(wisk.editor.document, event);
-    });
-    if (!wisk.editor.document.data.sync) {
-        wisk.editor.document.data.sync = {
-            syncLogs: [],
-            isPushed: false,
-            lastSync: 0
-        };
-    }
-    if (!wisk.editor.document.data.sync.syncLogs) {
-        wisk.editor.document.data.sync.syncLogs = [];
-    }
-    wisk.editor.document.data.sync.syncLogs.push(...eventsToSave);
-    try {
-        await wisk.db.setPage(wisk.editor.pageId, wisk.editor.document);
-
-        console.log('Saved document with', eventCount, 'events');
-    } catch (error) {
-        console.error('Failed to save document, preserving eventLog:', error);
-        if (wisk.editor.document.data.sync.syncLogs.length >= eventCount) {
-            wisk.editor.document.data.sync.syncLogs.splice(-eventCount);
-        }
-        wisk.sync.eventLog = eventsToSave.concat(wisk.sync.eventLog);
-        throw error;
-    }
-}
-
-wisk.sync.saveModification = saveModification;
-wisk.sync.applyEvent = applyEvent;
 
 function handleIncomingMessage(message) {
-    var m = JSON.parse(message);
+    const m = JSON.parse(message);
     console.log('Received:', m);
 
     if (firstMsg) {
@@ -322,10 +200,65 @@ function handleIncomingMessage(message) {
     }
 }
 
-window.addEventListener('online', () => {
-    console.log('User is online');
-});
+function startMessageLoop(interval = 5000) {
+    return setInterval(() => sendMessage('hello'), interval);
+}
 
-window.addEventListener('offline', () => {
-    console.log('User is offline');
-});
+function stopMessageLoop(intervalId) {
+    clearInterval(intervalId);
+}
+
+// Page Initialization
+async function sync() {
+    wisk.utils.showLoading('Syncing with server...');
+
+    const pages = await wisk.db.getAllPages();
+    const offlinePages = [];
+
+    for (const pageId of pages) {
+        if (pageId.startsWith('of-')) {
+            const page = await wisk.db.getPage(pageId);
+            offlinePages.push(page);
+        }
+    }
+
+    console.log('Offline pages:', offlinePages);
+}
+
+async function live() {
+    console.log('PAGE LIVE', wisk.editor.pageId);
+
+    if (wisk.editor.readonly) {
+        // TODO: Clean up wisk.site integration
+        const subdomain = window.location.hostname.split('.')[0];
+        const fetchUrl = `${wisk.editor.backendUrl}/v1/new?doc=${getURLParam('uwu')}&subdomain=${subdomain}`;
+
+        const response = await fetch(fetchUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (response.status !== 200) {
+            window.location.href = '/404.html';
+            return;
+        }
+
+        const data = await response.json();
+        initEditor(data);
+        return;
+    }
+
+    try {
+        // await initializeWebSocket();
+        // await sendAuth();
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+
+// Network Status
+window.addEventListener('online', () => console.log('Online'));
+window.addEventListener('offline', () => console.log('Offline'));
+
+wisk.sync.saveModification = saveModification;
+wisk.sync.applyEvent = applyEvent;

@@ -1089,14 +1089,21 @@ class OptionsComponent extends LitElement {
     }
 
     async restoreSnapshot(s) {
-        // ask for alert
         if (!confirm('Are you sure you want to restore this snapshot? This will overwrite your current document.')) {
             return;
         }
 
-        wisk.editor.document = s.data;
-        await wisk.sync.saveUpdates();
-        // reload page
+        // Use event system for restore
+        wisk.sync.newChange({
+            path: 'data',
+            action: 'restore',
+            value: {
+                data: s.data.data,
+                snapshotId: s.id
+            }
+        });
+
+        await wisk.sync.enqueueSave('snapshot-restore');
         window.location.reload();
     }
 
