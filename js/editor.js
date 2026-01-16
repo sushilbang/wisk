@@ -185,7 +185,7 @@ wisk.editor.addConfigChange = async function (id, value) {
                 break;
             }
     }
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('config-change');
 };
 
 wisk.editor.addUserAccess = async function (email) {
@@ -213,7 +213,7 @@ wisk.editor.addUserAccess = async function (email) {
         }
     });
 
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('user-access-add');
 };
 
 wisk.editor.removeUserAccess = async function (email) {
@@ -234,7 +234,7 @@ wisk.editor.removeUserAccess = async function (email) {
         }
     });
 
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('user-access-remove');
 };
 
 wisk.editor.setPublicStatus = async function (isPublic) {
@@ -249,7 +249,7 @@ wisk.editor.setPublicStatus = async function (isPublic) {
         }
     });
 
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('public-status');
 };
 
 wisk.editor.setDatabaseProp = async function (key, value) {
@@ -275,7 +275,7 @@ wisk.editor.setDatabaseProp = async function (key, value) {
         }
     });
 
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('database-prop');
 };
 
 wisk.editor.savePluginData = async function (identifier, data) {
@@ -296,8 +296,7 @@ wisk.editor.savePluginData = async function (identifier, data) {
         }
     });
 
-    // plugin data changes are critical, save immediately
-    await wisk.sync.saveModification();
+    await wisk.sync.enqueueSave('plugin-data');
 };
 
 wisk.editor.getPluginData = function (identifier) {
@@ -425,6 +424,7 @@ wisk.editor.handleChanges = async function (eventPackage) {
     const events = Array.isArray(eventPackage.events) ? eventPackage.events : [];
 
     // Group events by type for efficient processing
+    const elementPatchUpdates = [];
     const elementValueUpdates = [];
     const elementComponentUpdates = [];
     const elementCreations = [];
@@ -434,8 +434,11 @@ wisk.editor.handleChanges = async function (eventPackage) {
     const pluginDataChanges = [];
 
     events.forEach(event => {
+        const pathParts = event.path.split('.');
         if (event.path.startsWith('data.elements.')) {
-            if (event.path.includes('.value')) {
+            if (pathParts.length === 3) {
+                elementPatchUpdates.push(event);
+            } else if (event.path.includes('.value')) {
                 elementValueUpdates.push(event);
             } else if (event.path.includes('.component')) {
                 elementComponentUpdates.push(event);
@@ -462,6 +465,9 @@ wisk.editor.handleChanges = async function (eventPackage) {
     for (const event of elementCreations) {
         await handleElementCreation(event);
     }
+    for (const event of elementPatchUpdates) {
+        await handleElementPatch(event);
+    }
     for (const event of elementValueUpdates) {
         await handleElementUpdate(event);
     }
@@ -481,7 +487,6 @@ wisk.editor.handleChanges = async function (eventPackage) {
     }
 };
 
-// Handler for element creation events
 const handleElementCreation = async (event) => {
     const newElement = event.value.data;
     wisk.sync.applyEvent(wisk.editor.document, event);
@@ -508,7 +513,6 @@ const handleElementCreation = async (event) => {
     }
 };
 
-// Handler for element update events
 const handleElementUpdate = async (event) => {
     const pathParts = event.path.split('.');
     const elementId = pathParts[2];
@@ -537,7 +541,44 @@ const handleElementUpdate = async (event) => {
     }
 };
 
-// Handler for element deletion events
+const handleElementPatch = async (event) => {
+    const pathParts = event.path.split('.');
+    const elementId = pathParts[2];
+    const patch = event.value.data; // { value?: ..., component?: ... }
+
+    const element = wisk.editor.getElement(elementId);
+    let domElement = document.getElementById(elementId);
+
+    if (!element || !domElement) {
+        console.warn(`Element ${elementId} not found for patch`);
+        return;
+    }
+
+    // Apply event to document state first
+    wisk.sync.applyEvent(wisk.editor.document, event);
+
+    // Handle component change (must be done before value update)
+    if (patch.component && patch.component !== domElement.tagName.toLowerCase()) {
+        const newType = patch.component;
+        const newDomElement = document.createElement(newType);
+        newDomElement.id = elementId;
+        domElement.replaceWith(newDomElement);
+        domElement = newDomElement; // update reference for value setting
+    }
+
+    // Handle value update
+    if (patch.value !== undefined) {
+        setTimeout(() => {
+            domElement.setValue('', patch.value);
+        }, 0);
+    } else if (patch.component) {
+        // If only component changed, set value from current element state
+        setTimeout(() => {
+            domElement.setValue('', element.value);
+        }, 0);
+    }
+};
+
 const handleElementDeletions = async (events) => {
     if (!Array.isArray(events)) return;
 
@@ -559,7 +600,6 @@ const handleElementDeletions = async (events) => {
     }
 };
 
-// Handler for config change events
 const handleConfigChange = (event) => {
     wisk.sync.applyEvent(wisk.editor.document, event);
 
@@ -593,7 +633,6 @@ const handleConfigChange = (event) => {
     }
 };
 
-// Handler for plugin data change events
 const handlePluginDataChange = (event) => {
     wisk.sync.applyEvent(wisk.editor.document, event);
 
@@ -1032,7 +1071,7 @@ wisk.editor.deleteBlock = async function (elementId, rec) {
             }));
 
             if(rec === undefined) {
-                await wisk.sync.saveModification();
+                await wisk.sync.enqueueSave('block-delete');
             }
         }
     }
@@ -1082,36 +1121,18 @@ wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
 
     const timestamp = Date.now();
 
+    wisk.sync.newChange({
+        path: `data.elements.${elementId}`,
+        value: {
+            data: { component: newType, value: value },
+            timestamp: timestamp,
+            agent: wisk.sync.agent
+        }
+    });
+
     element.component = newType;
     element.value = value;
     element.lastUpdated = timestamp;
-
-    wisk.sync.newChange({
-        path: `data.elements.${elementId}.component`,
-        value: {
-            data: newType,
-            timestamp: timestamp,
-            agent: wisk.sync.agent
-        }
-    });
-
-    wisk.sync.newChange({
-        path: `data.elements.${elementId}.value`,
-        value: {
-            data: value,
-            timestamp: timestamp,
-            agent: wisk.sync.agent
-        }
-    });
-
-    wisk.sync.newChange({
-        path: `data.elements.${elementId}.lastUpdated`,
-        value: {
-            data: timestamp,
-            timestamp: timestamp,
-            agent: wisk.sync.agent
-        }
-    });
 
     const oldDomElement = document.getElementById(elementId);
     if (oldDomElement) {
@@ -1142,7 +1163,7 @@ wisk.editor.changeBlockType = async function (elementId, value, newType, rec) {
         detail: { id: elementId }
     }));
     if (rec === undefined) {
-        await wisk.sync.saveModification();
+        await wisk.sync.enqueueSave('block-type-change');
     }
 };
 
@@ -2603,8 +2624,7 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
     if(typeof elementIdOrEvent === 'object') {
         wisk.sync.newChange(elementIdOrEvent);
 
-        console.log('critical event, saving immediately');
-        await wisk.sync.saveModification();
+        await wisk.sync.enqueueSave('direct-event');
 
         // TODO: Send event to server here
         return;
@@ -2644,8 +2664,6 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
         detail: { id: elementId }
     }));
 
-    // debounce: creating events when typing stops. (what if the user closes the tab before debounce triggers???) -> flush pending updates using `unload`
-
     clearTimeout(debounceTimer);
 
     debounceTimer = setTimeout(async () => {
@@ -2661,33 +2679,12 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
             }
 
             const elementValue = domElement.getValue();
-            const componentName = domElement.tagName.toLowerCase();
 
-            // create event
+            // emit single fused patch event
             wisk.sync.newChange({
-                path: `data.elements.${elementId}.value`,
+                path: `data.elements.${elementId}`,
                 value: {
-                    data: elementValue,
-                    timestamp: timestamp,
-                    agent: wisk.sync.agent
-                }
-            });
-
-            // component because they can be changed (changeBlockType)
-
-            wisk.sync.newChange({
-                path: `data.elements.${elementId}.component`,
-                value: {
-                    data: componentName,
-                    timestamp: timestamp,
-                    agent: wisk.sync.agent
-                }
-            });
-
-            wisk.sync.newChange({
-                path: `data.elements.${elementId}.lastUpdated`,
-                value: {
-                    data: timestamp,
+                    data: { value: elementValue },
                     timestamp: timestamp,
                     agent: wisk.sync.agent
                 }
@@ -2711,8 +2708,7 @@ wisk.editor.justUpdates = async function (elementIdOrEvent) {
             }
         });
 
-        // save to indexedDB locally
-        await wisk.sync.saveModification();
+        await wisk.sync.enqueueSave('content-update');
 
         // TODO: Send only the events to server (future step)
         // await sendEventsToServer(wisk.sync.eventLog);

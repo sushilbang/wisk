@@ -157,19 +157,29 @@ class SelectorElement extends HTMLElement {
         }
 
         if (e.keyCode === 38 || e.keyCode === 40) {
-            const buttons = this.shadowRoot.querySelectorAll('.selector-button');
+            // Only navigate through visible buttons
+            const visibleButtons = Array.from(this.shadowRoot.querySelectorAll('.selector-button'))
+                .filter(btn => btn.style.display !== 'none');
+
+            if (visibleButtons.length === 0) return;
+
             let focusedButton = this.shadowRoot.querySelector('.selector-button-focused');
+            let currentIndex = focusedButton ? visibleButtons.indexOf(focusedButton) : -1;
+
             if (focusedButton) {
                 focusedButton.classList.remove('selector-button-focused');
-                if (e.keyCode === 38) {
-                    focusedButton = focusedButton.previousElementSibling || buttons[buttons.length - 1];
-                } else {
-                    focusedButton = focusedButton.nextElementSibling || buttons[0];
-                }
-                focusedButton.classList.add('selector-button-focused');
-            } else {
-                buttons[0].classList.add('selector-button-focused');
             }
+
+            if (e.keyCode === 38) {
+                // Up arrow
+                currentIndex = currentIndex <= 0 ? visibleButtons.length - 1 : currentIndex - 1;
+            } else {
+                // Down arrow
+                currentIndex = currentIndex >= visibleButtons.length - 1 ? 0 : currentIndex + 1;
+            }
+
+            focusedButton = visibleButtons[currentIndex];
+            focusedButton.classList.add('selector-button-focused');
 
             // also scroll the buttons
             focusedButton.scrollIntoView({
@@ -183,7 +193,7 @@ class SelectorElement extends HTMLElement {
         this.renderButtons(e.target.value);
     }
 
-    renderButtons(query) {
+    createAllButtons() {
         const buttonsContainer = this.shadowRoot.querySelector('.buttons');
         buttonsContainer.innerHTML = '';
 
@@ -200,10 +210,6 @@ class SelectorElement extends HTMLElement {
                     }
 
                     let title = wisk.plugins.pluginData.list[key].contents[i].title;
-
-                    if (query && !this.fuzzySearch(query, title)) {
-                        continue;
-                    }
 
                     const button = document.createElement('button');
                     button.classList.add('selector-button');
@@ -234,9 +240,26 @@ class SelectorElement extends HTMLElement {
                 }
             }
         }
-        const firstButton = this.shadowRoot.querySelector('.selector-button');
-        if (firstButton) {
-            firstButton.classList.add('selector-button-focused');
+    }
+
+    renderButtons(query) {
+        // Filter: hide/show existing buttons based on query
+        const buttons = this.shadowRoot.querySelectorAll('.selector-button');
+
+        buttons.forEach(btn => {
+            btn.classList.remove('selector-button-focused');
+            const title = btn.getAttribute('data-title');
+            if (!query || this.fuzzySearch(query, title)) {
+                btn.style.display = '';
+            } else {
+                btn.style.display = 'none';
+            }
+        });
+
+        // Set focus on first visible button
+        const firstVisible = this.shadowRoot.querySelector('.selector-button:not([style*="display: none"])');
+        if (firstVisible) {
+            firstVisible.classList.add('selector-button-focused');
         }
     }
 
@@ -254,6 +277,7 @@ class SelectorElement extends HTMLElement {
         this.shadowRoot.querySelector('#selector').classList.remove('displayNone');
         this.shadowRoot.querySelector('#selector-bg').classList.remove('displayNone');
         this.shadowRoot.querySelector('#selector-input').focus();
+        this.createAllButtons();
         this.renderButtons('');
     }
 
