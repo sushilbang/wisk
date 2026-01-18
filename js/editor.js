@@ -589,13 +589,32 @@ async function initializeElements() {
         document.getElementById(firstElement.id).setValue('', firstElement.value);
 
         if (wisk.editor.template && wisk.editor.template !== '') {
-            fetch('/js/templates/storage/' + wisk.editor.template + '.json')
-                .then(response => response.json())
-                .then(data => {
-                    // set data
+            // Load template from ZIP file in wisk-templates repo
+            const TEMPLATES_BASE_URL = 'https://sushilbang.github.io/wisk-templates';
+            const zipUrl = `${TEMPLATES_BASE_URL}/templates/${wisk.editor.template}.zip`;
+
+            console.log('[Editor] Loading template from URL parameter:', wisk.editor.template);
+            console.log('[Editor] ZIP URL:', zipUrl);
+
+            wisk.utils.showLoading('Loading template...');
+
+            wisk.utils
+                .loadTemplateFromZip(zipUrl)
+                .then(({ template, assetMap }) => {
+                    // Resolve asset references in template
+                    const resolvedTemplate = wisk.utils.resolveTemplateAssets(template, assetMap);
+                    console.log('[Editor] Template loaded successfully:', template.name);
+                    console.log('[Editor] Assets found:', Object.keys(assetMap).length);
+
                     setTimeout(() => {
-                        wisk.editor.useTemplate(data);
+                        wisk.editor.useTemplate(resolvedTemplate);
+                        wisk.utils.hideLoading();
                     }, 0);
+                })
+                .catch(err => {
+                    console.error('Error loading template:', err);
+                    wisk.utils.hideLoading();
+                    wisk.utils.showToast('Failed to load template', 3000);
                 });
         }
 

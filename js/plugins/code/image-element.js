@@ -1091,10 +1091,19 @@ class ImageElement extends BaseTextElement {
         } else {
             this.editable.innerHTML = value.textContent;
             if (value.imageUrl) {
-                this.imageUrl = value.imageUrl;
-                this.updateImage();
-                if (value.imageWidth) {
-                    this.imageElement.style.width = value.imageWidth;
+                // Handle blob URLs from template assets - store them to IndexedDB
+                if (value.imageUrl.startsWith('blob:')) {
+                    this.storeBlobUrl(value.imageUrl).then(() => {
+                        if (value.imageWidth) {
+                            this.imageElement.style.width = value.imageWidth;
+                        }
+                    });
+                } else {
+                    this.imageUrl = value.imageUrl;
+                    this.updateImage();
+                    if (value.imageWidth) {
+                        this.imageElement.style.width = value.imageWidth;
+                    }
                 }
             }
             if (value.showBorder !== undefined) {
@@ -1105,6 +1114,31 @@ class ImageElement extends BaseTextElement {
                     img.style.border = value.showBorder ? '1px solid var(--border-1)' : 'none';
                 }
             }
+        }
+    }
+
+    async storeBlobUrl(blobUrl) {
+        try {
+            // Fetch the blob
+            const response = await fetch(blobUrl);
+            const blob = await response.blob();
+
+            // Generate a unique filename
+            const extension = blob.type.split('/')[1] || 'png';
+            const localUrl = 'template-image-' + Date.now() + '.' + extension;
+
+            // Save to IndexedDB
+            await wisk.db.setAsset(localUrl, blob);
+
+            // Set the new URL and update
+            this.imageUrl = localUrl;
+            this.updateImage();
+            this.sendUpdates();
+
+            console.log('[Image Element] Stored template asset as:', localUrl);
+            return localUrl;
+        } catch (error) {
+            console.error('[Image Element] Error storing blob URL:', error);
         }
     }
 
