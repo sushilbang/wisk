@@ -347,7 +347,6 @@
                             if (event.data?.type === 'CACHE_UPDATED') {
                                 wisk.utils.showToast('Update complete', 3000);
                                 document.querySelector('.update-box').style.display = 'none';
-                                // Save the new version after successful update
                                 const pendingVersion = sessionStorage.getItem('pendingVersion');
                                 if (pendingVersion) {
                                     localStorage.setItem('lastKnownVersion', pendingVersion);
@@ -408,40 +407,37 @@
             }
 
             async function checkForUpdate() {
-                // Check at most once every 24 hours
                 const lastCheckTime = localStorage.getItem('lastUpdateCheck');
-                const CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in ms
-
+                const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
                 if (lastCheckTime && (Date.now() - parseInt(lastCheckTime)) < CHECK_INTERVAL) {
-                    return false;
+                    return;
                 }
-
                 const lastKnownVersion = localStorage.getItem('lastKnownVersion');
-
                 try {
                     // Fetch version.json from GitHub to always get the latest
                     const response = await fetch('https://raw.githubusercontent.com/sohzm/wisk/master/version.json?t=' + Date.now());
                     if (!response.ok) {
                         console.log('Version check error:', response.status);
-                        return false;
+                        return;
                     }
-
                     const data = await response.json();
                     const latestVersion = data.version;
-
-                    // Mark check time
                     localStorage.setItem('lastUpdateCheck', Date.now().toString());
 
                     if (!lastKnownVersion) {
-                        // First visit, store current version
+                        // existing user
+                        if (localStorage.getItem('lastUpdate')) {
+                            sessionStorage.setItem('pendingVersion', latestVersion);
+                            showUpdateBox();
+                            return true;
+                        }
+                        // new user
                         localStorage.setItem('lastKnownVersion', latestVersion);
                         return false;
                     }
 
                     if (latestVersion !== lastKnownVersion) {
-                        // New version available
                         console.log('New version available:', latestVersion);
-                        // Store the new version so we can save it after update
                         sessionStorage.setItem('pendingVersion', latestVersion);
                         showUpdateBox();
                         return true;
