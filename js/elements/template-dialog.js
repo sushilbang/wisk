@@ -3,7 +3,7 @@
 import { html, css, LitElement } from '/a7/cdn/lit-core-2.7.4.min.js';
 
 // Base URL for wisk-templates repository (GitHub Pages)
-const TEMPLATES_BASE_URL = 'https://sushilbang.github.io/wisk-templates';
+const TEMPLATES_BASE_URL = 'https://sohzm.github.io/wisk-templates';
 
 class TemplateDialog extends LitElement {
     static styles = css`
@@ -322,11 +322,9 @@ class TemplateDialog extends LitElement {
     async fetchTemplates() {
         try {
             const url = `${TEMPLATES_BASE_URL}/templates.json`;
-            console.log('[Template Dialog] Fetching template list from:', url);
             const response = await fetch(url);
             const data = await response.json();
             this.templates = data.templates;
-            console.log('[Template Dialog] Loaded', this.templates.length, 'templates');
             this.requestUpdate();
         } catch (error) {
             console.error('[Template Dialog] Error fetching templates:', error);
@@ -378,17 +376,12 @@ class TemplateDialog extends LitElement {
 
             // Load template from ZIP file
             const zipUrl = `${TEMPLATES_BASE_URL}/templates/${this.selectedTemplate.id}.zip`;
-            console.log('[Template Dialog] Loading template:', this.selectedTemplate.name);
-            console.log('[Template Dialog] ZIP URL:', zipUrl);
             const { template, assetMap } = await wisk.utils.loadTemplateFromZip(zipUrl);
 
             // Resolve asset references in template
             const resolvedTemplate = wisk.utils.resolveTemplateAssets(template, assetMap);
-            console.log('[Template Dialog] Template ready. Assets resolved:', Object.keys(assetMap).length);
-
             // Apply the template
             wisk.editor.useTemplate(resolvedTemplate);
-            console.log('[Template Dialog] Template applied successfully');
 
             wisk.utils.hideLoading();
             this.hide();

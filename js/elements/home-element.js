@@ -1,7 +1,7 @@
 import { html, css, LitElement } from '/a7/cdn/lit-core-2.7.4.min.js';
 
 // Base URL for wisk-templates repository (GitHub Pages)
-const TEMPLATES_BASE_URL = 'https://sushilbang.github.io/wisk-templates';
+const TEMPLATES_BASE_URL = 'https://sohzm.github.io/wisk-templates';
 
 class HomeElement extends LitElement {
     static styles = css`
@@ -943,11 +943,9 @@ class HomeElement extends LitElement {
     async fetchTemplates() {
         try {
             const url = `${TEMPLATES_BASE_URL}/templates.json`;
-            console.log('[Home] Fetching template list from:', url);
             const response = await fetch(url);
             const data = await response.json();
             this.templates = data.templates;
-            console.log('[Home] Loaded', this.templates.length, 'templates from GitHub Pages');
             this.requestUpdate();
         } catch (error) {
             console.error('[Home] Error fetching templates:', error);

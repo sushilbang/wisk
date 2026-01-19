@@ -287,8 +287,6 @@ wisk.utils.ZipExtractor = class {
 // Helper function to load a template from a ZIP URL
 wisk.utils.loadTemplateFromZip = async function (zipUrl) {
     try {
-        console.log('[Template] Fetching ZIP from:', zipUrl);
-
         // Fetch the ZIP file
         const response = await fetch(zipUrl);
         if (!response.ok) {
@@ -309,8 +307,6 @@ wisk.utils.loadTemplateFromZip = async function (zipUrl) {
 
         const templateText = await templateBlob.text();
         const template = JSON.parse(templateText);
-        console.log('[Template] ZIP extracted successfully. Template name:', template.name);
-        console.log('[Template] Files in ZIP:', Array.from(files.keys()));
 
         // Create asset map with blob URLs for all assets
         const assetMap = {};

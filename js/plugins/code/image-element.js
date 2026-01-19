@@ -1135,7 +1135,6 @@ class ImageElement extends BaseTextElement {
             this.updateImage();
             this.sendUpdates();
 
-            console.log('[Image Element] Stored template asset as:', localUrl);
             return localUrl;
         } catch (error) {
             console.error('[Image Element] Error storing blob URL:', error);
