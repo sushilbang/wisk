@@ -347,7 +347,11 @@
                             if (event.data?.type === 'CACHE_UPDATED') {
                                 wisk.utils.showToast('Update complete', 3000);
                                 document.querySelector('.update-box').style.display = 'none';
-                                localStorage.setItem('lastUpdate', new Date().toISOString().split('T')[0]);
+                                const pendingVersion = sessionStorage.getItem('pendingVersion');
+                                if (pendingVersion) {
+                                    localStorage.setItem('lastKnownVersion', pendingVersion);
+                                    sessionStorage.removeItem('pendingVersion');
+                                }
                                 navigator.serviceWorker.removeEventListener('message', messageListener);
                                 if (event.data.success) {
                                     resolve(true);
@@ -402,25 +406,45 @@
                 };
             }
 
-            function checkForUpdate() {
-                const lastUpdate = localStorage.getItem('lastUpdate');
-                const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD format
-
-                if (!lastUpdate) {
-                    localStorage.setItem('lastUpdate', currentDate);
-                    return true;
+            async function checkForUpdate() {
+                const lastCheckTime = localStorage.getItem('lastUpdateCheck');
+                const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+                if (lastCheckTime && (Date.now() - parseInt(lastCheckTime)) < CHECK_INTERVAL) {
+                    return;
                 }
+                const lastKnownVersion = localStorage.getItem('lastKnownVersion');
+                try {
+                    // Fetch version.json from GitHub to always get the latest
+                    const response = await fetch('https://raw.githubusercontent.com/sohzm/wisk/master/version.json?t=' + Date.now());
+                    if (!response.ok) {
+                        console.log('Version check error:', response.status);
+                        return;
+                    }
+                    const data = await response.json();
+                    const latestVersion = data.version;
+                    localStorage.setItem('lastUpdateCheck', Date.now().toString());
 
-                // Calculate days between lastUpdate and current date
-                const lastUpdateDate = new Date(lastUpdate);
-                const now = new Date(currentDate);
-                const timeDiff = now.getTime() - lastUpdateDate.getTime();
-                const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
+                    if (!lastKnownVersion) {
+                        // existing user
+                        if (localStorage.getItem('lastUpdate')) {
+                            sessionStorage.setItem('pendingVersion', latestVersion);
+                            showUpdateBox();
+                            return true;
+                        }
+                        // new user
+                        localStorage.setItem('lastKnownVersion', latestVersion);
+                        return false;
+                    }
 
-                if (daysDiff >= 3) {
-                    console.log('updateplz - last update was ' + daysDiff + ' days ago');
-                    showUpdateBox();
-                    return true;
+                    if (latestVersion !== lastKnownVersion) {
+                        console.log('New version available:', latestVersion);
+                        sessionStorage.setItem('pendingVersion', latestVersion);
+                        showUpdateBox();
+                        return true;
+                    }
+                } catch (e) {
+                    // Offline or API error - skip update check
+                    console.log('Could not check for updates:', e.message);
                 }
 
                 return false;
