@@ -375,7 +375,7 @@ class TemplateDialog extends LitElement {
             wisk.utils.showLoading('Loading template...');
 
             // Load template from ZIP file
-            const zipUrl = `${TEMPLATES_BASE_URL}/templates/${this.selectedTemplate.id}.zip`;
+            const zipUrl = `${TEMPLATES_BASE_URL}/templates/${this.selectedTemplate.id}/data.zip`;
             const { template, assetMap } = await wisk.utils.loadTemplateFromZip(zipUrl);
 
             // Resolve asset references in template

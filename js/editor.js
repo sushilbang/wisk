@@ -591,7 +591,7 @@ async function initializeElements() {
         if (wisk.editor.template && wisk.editor.template !== '') {
             // Load template from ZIP file in wisk-templates repo
             const TEMPLATES_BASE_URL = 'https://sohzm.github.io/wisk-templates';
-            const zipUrl = `${TEMPLATES_BASE_URL}/templates/${wisk.editor.template}.zip`;
+            const zipUrl = `${TEMPLATES_BASE_URL}/templates/${wisk.editor.template}/data.zip`;
 
             wisk.utils.showLoading('Loading template...');
 
